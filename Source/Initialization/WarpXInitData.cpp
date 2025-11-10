@@ -539,6 +539,10 @@ WarpX::InitData ()
     PerformanceHints();
 
     CheckKnownIssues();
+
+#ifdef PUSH_SVE_SME_PHYSORT_ORDER3
+    mypc->InitBin();
+#endif
 }
 
 void

@@ -500,6 +500,9 @@ WarpX::WarpX ()
 
     m_accelerator_lattice.resize(nlevs_max);
 
+    // USER DEFINED 大数组解决
+    InitTempVectors();
+
 }
 
 WarpX::~WarpX ()
@@ -508,6 +511,16 @@ WarpX::~WarpX ()
     for (int lev = 0; lev < nlevs_max; ++lev) {
         ClearLevel(lev);
     }
+
+    free(aos_arr);
+}
+
+// USER DEFINED 大数组解决
+void
+WarpX::InitTempVectors()
+{
+    int max_threads = omp_get_max_threads();
+    aos_arr = (amrex::Real*)malloc(max_threads * 6 * m_box_size * sizeof(amrex::Real));
 }
 
 void
@@ -1420,6 +1433,9 @@ WarpX::ReadParameters ()
         }
 
         const amrex::ParmParse pp_warpx("warpx");
+
+        utils::parser::queryWithParser(pp_warpx, "m_box_size", m_box_size);
+
         pp_warpx.queryarr("sort_intervals", sort_intervals_string_vec);
         sort_intervals = utils::parser::IntervalsParser(sort_intervals_string_vec);
 

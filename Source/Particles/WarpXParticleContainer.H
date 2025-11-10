@@ -158,6 +158,8 @@ public:
 
     virtual void PostRestart () = 0;
 
+    void InitBin (amrex::IntVect bin_size=amrex::IntVect(AMREX_D_DECL(1, 1, 1)));
+
     void AllocData ();
 
     /**

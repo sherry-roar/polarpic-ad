@@ -115,6 +115,10 @@ public:
 
     void Evolve (int numsteps = -1);
 
+    // -=======  USER DEFINED FUNCTIONS  ========
+    void InitTempVectors();    
+    // ========== END USER DEFINED FUNCTIONS  ==========
+
     //
     // Functions used by implicit solvers
     //
@@ -347,6 +351,9 @@ public:
 
     static utils::parser::IntervalsParser sort_intervals;
     static amrex::IntVect sort_bin_size;
+
+    int m_box_size = 4913;
+    amrex::Real *aos_arr;
 
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;

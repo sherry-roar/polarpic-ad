@@ -95,6 +95,8 @@ public:
 
     void InitMultiPhysicsModules ();
 
+    void InitBin ();
+
     /**
     * \brief This evolves all the particles by one PIC time step, including current deposition, the
     * field solve, and pushing the particles, for all the species in the MultiParticleContainer.

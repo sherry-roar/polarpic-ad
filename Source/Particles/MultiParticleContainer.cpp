@@ -620,6 +620,15 @@ MultiParticleContainer::SortParticlesByBin (amrex::IntVect bin_size)
 }
 
 void
+MultiParticleContainer::InitBin ()
+{
+    amrex::IntVect bin_size=IntVect(AMREX_D_DECL(1, 1, 1));
+    for (auto& pc : allcontainers) {
+        pc->InitBin(bin_size);
+    }
+}
+
+void
 MultiParticleContainer::Redistribute ()
 {
     for (auto& pc : allcontainers) {

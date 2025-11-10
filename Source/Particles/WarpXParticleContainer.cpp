@@ -158,6 +158,49 @@ WarpXParticleContainer::AllocData ()
 }
 
 void
+WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
+{
+    BL_PROFILE("WarpXParticleContainer::InitBin()");
+
+    if (bin_size == IntVect::TheZeroVector()) { return; }
+
+    for (int lev = 0; lev < numLevels(); ++lev)
+    {
+        const amrex::Geometry& geom = Geom(lev);
+        const auto dxi = geom.InvCellSizeArray();
+        const auto plo = geom.ProbLoArray();
+        const auto domain = geom.Domain();
+
+        for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+        {
+            auto& ptile           = ParticlesAt(lev, pti);
+            const std::size_t np  = pti.numParticles();
+
+            const amrex::Box& box = pti.tilebox();
+            
+            int ntiles = numTilesInBox(box, true, bin_size);
+
+            m_bins.build(np, ptile.getParticleTileData(), ntiles,
+                       GetParticleBin{plo, dxi, domain, bin_size, box});
+
+            auto* perm            = m_bins.permutationPtr();  // permutation array
+            int* offsets          = reinterpret_cast<int*>(m_bins.offsetsPtr());      // offset array
+            int numBins           = m_bins.numBins();
+
+            ReorderParticles(lev, pti, perm);
+
+            int nps = static_cast<int>(np);
+            Box growbox;
+            growbox = pti.tilebox();
+            const amrex::IntVect& ng_J = WarpX::GetInstance().get_ng_depos_J();
+            growbox.grow(ng_J);
+
+            ptile.init_phys_sort(nps, offsets, numBins, box, growbox);
+        }
+    }
+}
+
+void
 WarpXParticleContainer::AddNParticles (int /*lev*/, long n,
                                        amrex::Vector<amrex::ParticleReal> const & x,
                                        amrex::Vector<amrex::ParticleReal> const & y,
