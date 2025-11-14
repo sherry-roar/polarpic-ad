@@ -1438,63 +1438,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, lo, q, WarpX::n_rz_azimuthal_modes);
-#ifdef MY_TEST_ORDER3
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-    
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-        
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    if (&jx_arr_tmp(x, y, z) == &jx_arr_test(x, y, z))
-                                    {
-                                        printf("&jx_arr: %p, &jx_arr_test: %p\n", (void*)&jx_arr_tmp(x, y, z), (void*)&jx_arr_test(x, y, z));
-                                        amrex::Abort("&jx_arr == &jx_arr_test\n");
-                                    }
-                                    if (fabs(jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-        
-                                    // jy_arr
-                                    if (&jy_arr_tmp(x, y, z) == &jy_arr_test(x, y, z))
-                                    {
-                                        amrex::Abort("&jy_arr == &jy_arr_test\n");
-                                    }
-                                    if (fabs(jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-        
-                                    // jz_arr
-                                    if (&jz_arr_tmp(x, y, z) == &jz_arr_test(x, y, z))
-                                    {
-                                        amrex::Abort("&jz_arr == &jz_arr_test\n");   
-                                    }
-                                    if (fabs(jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif // MY_TEST_ORDER3
 #endif // BASELINE_ORDER3
 
 #ifdef ORG_SVE_ORDER3
@@ -1504,7 +1447,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, lo, q, WarpX::n_rz_azimuthal_modes);
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_org_sve_order3_test<3>(
                     //     GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //     uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1518,63 +1461,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //     jx_vals_test, jy_vals_test, jz_vals_test,
                     //     jx_fab_test, jy_fab_test, jz_fab_test, 
                     //     WarpX::n_rz_azimuthal_modes);
-
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-    
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-        
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    if (&jx_arr_tmp(x, y, z) == &jx_arr_test(x, y, z))
-                                    {
-                                        printf("&jx_arr: %p, &jx_arr_test: %p\n", (void*)&jx_arr_tmp(x, y, z), (void*)&jx_arr_test(x, y, z));
-                                        amrex::Abort("&jx_arr == &jx_arr_test\n");
-                                    }
-                                    if (fabs(jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-        
-                                    // jy_arr
-                                    if (&jy_arr_tmp(x, y, z) == &jy_arr_test(x, y, z))
-                                    {
-                                        amrex::Abort("&jy_arr == &jy_arr_test\n");
-                                    }
-                                    if (fabs(jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-        
-                                    // jz_arr
-                                    if (&jz_arr_tmp(x, y, z) == &jz_arr_test(x, y, z))
-                                    {
-                                        amrex::Abort("&jz_arr == &jz_arr_test\n");   
-                                    }
-                                    if (fabs(jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) > 0.01)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif // MY_TEST_ORDER3
 #endif // ORG_SVE_ORDER3
 
 #ifdef PURE_SVE_ORDER3
@@ -1584,7 +1470,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, lo, q, WarpX::n_rz_azimuthal_modes);
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_sve_order3_test<3>(
                     //         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1598,52 +1484,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //         jx_vals_test, jy_vals_test, jz_vals_test,
                     //         jx_fab_test, jy_fab_test, jz_fab_test, 
                     //         WarpX::n_rz_azimuthal_modes);
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-
-                                    // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
 #endif  // PURE_SVE_ORDER3
 
 #ifdef PURE_RHOCELL_ORDER3
@@ -1654,7 +1494,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, WarpX::n_rz_azimuthal_modes);
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_rhocell_order3_test<3>(
                     //     GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //     uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1668,53 +1508,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //     jx_vals_test, jy_vals_test, jz_vals_test,
                     //     jx_fab_test, jy_fab_test, jz_fab_test, 
                     //     WarpX::n_rz_azimuthal_modes);
-
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-
-                                    // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
 #endif  // PURE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_ORDER3
@@ -1725,7 +1518,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, WarpX::n_rz_azimuthal_modes);
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_sve_rhocell_order3_test<3>(
                     //         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1739,52 +1532,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //         jx_vals_test, jy_vals_test, jz_vals_test,
                     //         jx_fab_test, jy_fab_test, jz_fab_test, 
                     //         WarpX::n_rz_azimuthal_modes);
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-
-                                    // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
 #endif  // SVE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_SME_ORDER3
@@ -1796,7 +1543,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, WarpX::n_rz_azimuthal_modes
                     );
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_sve_rhocell_sme_order3_test<3>(
                     //     GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //     uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1811,52 +1558,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //     jx_fab_test, jy_fab_test, jz_fab_test, 
                     //     WarpX::n_rz_azimuthal_modes
                     // );
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // // jy_arr
-                                    // if (fabs(jy_err) > 1e-9)
-                                    // {
-                                    //     amrex::Abort("jy_arr is wrong\n");
-                                    // }
-
-                                    // // jz_arr
-                                    // if (fabs(jz_err) > 1e-9)
-                                    // {
-                                    //     printf("ip = %ld\n", ip);
-                                    //     printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                    //     amrex::Abort("jz_arr is wrong\n");
-                                    // }
-                                }
-                            }
-                        }
-                    }
-#endif
 #endif  // PURE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_SME_LARGE_ORDER3
@@ -1868,7 +1569,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, WarpX::n_rz_azimuthal_modes
                     );
-#ifdef MY_TEST_ORDER3
+
                     // doDepositionShapeN_sve_rhocell_sme_large_order3_test<3>(
                     //     GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                     //     uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1883,154 +1584,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //     jx_fab_test, jy_fab_test, jz_fab_test, 
                     //     WarpX::n_rz_azimuthal_modes
                     // );
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_arr - jx_arr_test: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // // jy_arr
-                                    // if (fabs(jy_err) > 1e-9)
-                                    // {
-                                    //     amrex::Abort("jy_arr is wrong\n");
-                                    // }
-
-                                    // // jz_arr
-                                    // if (fabs(jz_err) > 1e-9)
-                                    // {
-                                    //     printf("ip = %ld\n", ip);
-                                    //     printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                    //     amrex::Abort("jz_arr is wrong\n");
-                                    // }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
 #endif  // SVE_RHOCELL_SME_LARGE_ORDER3
-
-#ifdef SVE_RHOCELL_SME_SORT_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_SORT_ORDER3\n");
-                    const Dim3 len = length(tilebox);
-
-                    auto& wqx = WarpX::GetInstance().m_thread_private_wqx[thread_num];
-                    auto& wqy = WarpX::GetInstance().m_thread_private_wqy[thread_num];
-                    auto& wqz = WarpX::GetInstance().m_thread_private_wqz[thread_num];
-
-                    auto& xrhocells = WarpX::GetInstance().m_thread_private_xrhocells[thread_num];
-                    auto& yrhocells = WarpX::GetInstance().m_thread_private_yrhocells[thread_num];
-                    auto& zrhocells = WarpX::GetInstance().m_thread_private_zrhocells[thread_num];
-
-                    auto& sxm = WarpX::GetInstance().m_thread_private_sxm[thread_num];
-                    auto& sym = WarpX::GetInstance().m_thread_private_sym[thread_num];
-                    auto& szm = WarpX::GetInstance().m_thread_private_szm[thread_num];
-
-                    auto& newbin = WarpX::GetInstance().m_thread_private_newbin[thread_num];
-
-                    if (np_to_deposit > WarpX::GetInstance().m_init_np)
-                    {
-                        // wqx.resize(np_to_deposit);
-                        // wqy.resize(np_to_deposit);
-                        // wqz.resize(np_to_deposit);
-                        // sxm.resize(np_to_deposit * 4);
-                        // sym.resize(np_to_deposit * 4);
-                        // szm.resize(np_to_deposit * 4);
-                        // newbin.resize(np_to_deposit);
-
-                        amrex::Abort("np_to_deposit > m_init_np");
-                    }
-
-                    const int numcells = (len.x - 3) * len.y * (len.z + 1);
-                    // if (numcells > WarpX::GetInstance().m_len_rhocell)
-                    // {
-                    //     amrex::Abort("numcells > WarpX::GetInstance().m_len_rhocell");
-                    // }
-
-                    xrhocells.assign(8 * numcells, 0.0);
-                    yrhocells.assign(8 * numcells, 0.0);
-                    zrhocells.assign(8 * numcells, 0.0);
-
-                    auto& ptile = ParticlesAt(lev, pti); 
-                    const amrex::Box& tbox = pti.tilebox();
-
-                    doDepositionShapeN_sve_rhocell_sme_sort_order3<3>(
-                            GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
-                            uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
-                            jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
-                            xyzmin, len, q, WarpX::n_rz_azimuthal_modes,
-                            wqx, wqy, wqz, sxm, sym, szm,
-                            xrhocells, yrhocells, zrhocells,
-                            newbin, ptile);
-#ifdef MY_TEST_ORDER3
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_err: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
-                                    {
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-
-                                    // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
-#endif  // SVE_RHOCELL_SME_SORT_ORDER3
 
 #ifdef SVE_RHOCELL_PHYSORT_ORDER3
                     printf("RUN SVE_RHOCELL_PHYSORT_ORDER3\n");
@@ -2043,54 +1597,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, ptile, WarpX::n_rz_azimuthal_modes
                     );
-#ifdef MY_TEST_ORDER3
-                    amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_tmp = jz_fab.array();
-
-                    amrex::Array4<amrex::Real> const& jx_arr_test = jx_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jy_arr_test = jy_fab_test.array();
-                    amrex::Array4<amrex::Real> const& jz_arr_test = jz_fab_test.array();
-
-                    for (long ip = 0; ip < np_to_deposit; ip++) 
-                    {
-                        for (int iz = 0; iz <= 3; iz++){
-                            for (int iy = 0; iy <= 3; iy++){
-                                for (int ix = 0; ix <= 3; ix++){
-                                    int x = lo.x + j_m[ip] + ix;
-                                    int y = lo.y + k_m[ip] + iy;
-                                    int z = lo.z + l_m[ip] + iz;
-                                    // jx_arr
-                                    double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                    double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
-                                    double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
-                                    {
-                                        double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
-                                        printf("ip = %ld\n", ip);
-                                        printf("jx_arr: %lf, jx_arr_test: %lf, jx_err: %lf\n", jx_arr_tmp(x, y, z), jx_arr_test(x, y, z), err);
-                                        amrex::Abort("jx_arr is wrong\n");
-                                    }
-
-                                    // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
-                                    {
-                                        printf("jy_arr: %lf, jy_arr_test: %lf, jy_err: %lf\n", jy_arr_tmp(x, y, z), jy_arr_test(x, y, z), jy_err);
-                                        amrex::Abort("jy_arr is wrong\n");
-                                    }
-
-                                    // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
-                                    {
-                                        printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
-                                        amrex::Abort("jz_arr is wrong\n");
-                                    }
-                                }
-                            }
-                        }
-                    }
-#endif  // MY_TEST_ORDER3
 #endif  // SVE_RHOCELL_PHYSORT_ORDER3
 
 #ifdef SVE_RHOCELL_SME_PHYSORT_ORDER3
@@ -2104,6 +1610,8 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
                         xyzmin, len, q, ptile, WarpX::n_rz_azimuthal_modes
                     );
+#endif  // SVE_RHOCELL_SME_PHYSORT_ORDER3
+
 #ifdef MY_TEST_ORDER3
                     amrex::Array4<amrex::Real> const& jx_arr_tmp = jx_fab.array();
                     amrex::Array4<amrex::Real> const& jy_arr_tmp = jy_fab.array();
@@ -2136,7 +1644,6 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                                     // jy_arr
                                     if (fabs(jy_err) > 1e-9)
                                     {
-                                        printf("jy_arr: %lf, jy_arr_test: %lf, jy_err: %lf\n", jy_arr_tmp(x, y, z), jy_arr_test(x, y, z), jy_err);
                                         amrex::Abort("jy_arr is wrong\n");
                                     }
 
@@ -2144,15 +1651,14 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                                     if (fabs(jz_err) > 1e-9)
                                     {
                                         printf("ip = %ld\n", ip);
-                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_arr - jz_arr_test: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z));
+                                        printf("jz_arr: %lf, jz_arr_test: %lf, jz_err: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_err);
                                         amrex::Abort("jz_arr is wrong\n");
                                     }
                                 }
                             }
                         }
                     }
-#endif  // MY_TEST_ORDER3
-#endif  // SVE_RHOCELL_SME_PHYSORT_ORDER3
+#endif // MY_TEST_ORDER3
                 } else if (WarpX::nox == 4){
                     doDepositionShapeN<4>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,

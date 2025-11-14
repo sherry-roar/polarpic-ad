@@ -2986,46 +2986,32 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
 #ifdef PUSH_TEST_ORDER3
-#if defined(PUSH_ORG_ORDER3) || defined(PUSH_BASELINE_ORDER3) || defined(PUSH_SVE_ORDER3) || defined(PUSH_SVE_SME_MICRO_ORDER3) || defined(PUSH_SVE_SME_LARGE_ORDER3)
                     const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
                     const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
                     const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
 
-                    for (long ip = 0; ip < np_to_push; ++ip)
-                    {
-                        double ux_err = fabs(ux_test[ip] - ux[ip]) / fabs(ux_test[ip]);
-                        double uy_err = fabs(uy_test[ip] - uy[ip]) / fabs(uy_test[ip]);
-                        double uz_err = fabs(uz_test[ip] - uz[ip]) / fabs(uz_test[ip]);
+                    // for (long ip = 0; ip < np_to_push; ++ip)
+                    // {
+                    //     double ux_err = fabs(ux_test[ip] - ux[ip]) / fabs(ux_test[ip]);
+                    //     double uy_err = fabs(uy_test[ip] - uy[ip]) / fabs(uy_test[ip]);
+                    //     double uz_err = fabs(uz_test[ip] - uz[ip]) / fabs(uz_test[ip]);
 
-                        if (ux_err > 1e-8)
-                        {
-                            printf("ux_err: %lf\n", ux_err);
-                            amrex::Abort("ux_err");
-                        }
-                        if (uy_err > 1e-8)
-                        {
-                            printf("uy_err: %lf\n", uy_err);
-                            amrex::Abort("uy_err");
-                        }
-                        if (uz_err > 1e-8)
-                        {
-                            printf("uz_err: %lf\n", uz_err);
-                            amrex::Abort("uz_err");
-                        }
-                    }
-
-                    free(sx_m_test), free(sy_m_test), free(sz_m_test);
-                    free(j_m_test), free(k_m_test), free(l_m_test);
-                    free(Exp_test), free(Eyp_test), free(Ezp_test), free(Bxp_test), free(Byp_test), free(Bzp_test);
-                    free(inv_gamma_test);
-                    free(tx_test), free(ty_test), free(tz_test);
-                    free(tsqi_test);
-                    free(sx_test), free(sy_test), free(sz_test);
-                    free(ux_p_test), free(uy_p_test), free(uz_p_test);
-#elif defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
-                    const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
-                    const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
-                    const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
+                    //     if (ux_err > 1e-8)
+                    //     {
+                    //         printf("ux_err: %lf\n", ux_err);
+                    //         amrex::Abort("ux_err");
+                    //     }
+                    //     if (uy_err > 1e-8)
+                    //     {
+                    //         printf("uy_err: %lf\n", uy_err);
+                    //         amrex::Abort("uy_err");
+                    //     }
+                    //     if (uz_err > 1e-8)
+                    //     {
+                    //         printf("uz_err: %lf\n", uz_err);
+                    //         amrex::Abort("uz_err");
+                    //     }
+                    // }
 
                     for (long ip = 0; ip < np_to_push; ++ip)
                     {
@@ -3070,8 +3056,6 @@ PhysicalParticleContainer::Evolve (int lev,
                     free(tsqi_test);
                     free(sx_test), free(sy_test), free(sz_test);
                     free(ux_p_test), free(uy_p_test), free(uz_p_test);
-
-#endif
 #endif  // PUSH_TEST_ORDER3
                 } else if (push_type == PushType::Implicit) {
                     ImplicitPushXP(pti, exfab, eyfab, ezfab,
