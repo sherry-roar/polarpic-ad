@@ -353,7 +353,9 @@ public:
     static amrex::IntVect sort_bin_size;
 
     int m_box_size = 4913;
+    int m_init_np = 8 * 8 * 8 * 8 * 8 * 8 + 2048;
     amrex::Real *aos_arr;
+    int *int_buffer;
 
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;

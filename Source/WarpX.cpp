@@ -513,6 +513,7 @@ WarpX::~WarpX ()
     }
 
     free(aos_arr);
+    free(int_buffer);
 }
 
 // USER DEFINED 大数组解决
@@ -521,6 +522,7 @@ WarpX::InitTempVectors()
 {
     int max_threads = omp_get_max_threads();
     aos_arr = (amrex::Real*)malloc(max_threads * 6 * m_box_size * sizeof(amrex::Real));
+    int_buffer = (int*)malloc(max_threads * m_init_np * sizeof(int));
 }
 
 void
@@ -1434,6 +1436,7 @@ WarpX::ReadParameters ()
 
         const amrex::ParmParse pp_warpx("warpx");
 
+        utils::parser::queryWithParser(pp_warpx, "m_init_np", m_init_np);
         utils::parser::queryWithParser(pp_warpx, "m_box_size", m_box_size);
 
         pp_warpx.queryarr("sort_intervals", sort_intervals_string_vec);

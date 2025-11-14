@@ -1090,7 +1090,7 @@ PhysicalParticleContainer::PhysicalParticleContainer (AmrCore* amr_core, int isp
         m_boundary_conditions.SetThermalVelocity(boundary_uth);
     }
 
-#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3)
+#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
     AddRealComp("w_buffer");
     AddRealComp("ux_buffer");
     AddRealComp("uy_buffer");
@@ -2787,7 +2787,7 @@ PhysicalParticleContainer::Evolve (int lev,
                 const long np_gather = (cEx) ? nfine_gather : np;
 
                 int e_is_nodal = Ex.is_nodal() and Ey.is_nodal() and Ez.is_nodal();
-#ifdef PUSH_SVE_SME_PHYSORT_ORDER3
+#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
                 Box growbox = pti.tilebox();
             
                 const amrex::IntVect ngEB = Ex.nGrowVect();
@@ -3306,6 +3306,64 @@ PhysicalParticleContainer::Evolve (int lev,
                     free(ux_p_test), free(uy_p_test), free(uz_p_test);
 #endif  // PUSH_TEST_ORDER3
 #endif  // PUSH_SVE_SME_PHYSORT_ORDER3
+
+#ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+                    printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
+                    PushPX_sve_sme_physort_fusion_order3(pti, exfab, eyfab, ezfab,
+                            bxfab, byfab, bzfab,
+                            Ex.nGrowVect(), e_is_nodal,
+                            0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
+                            a_dt_type);
+#ifdef PUSH_TEST_ORDER3
+                    const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
+
+                    for (long ip = 0; ip < np_to_push; ++ip)
+                    {
+                        double ux_err = 1;
+                        double uy_err = 1;
+                        double uz_err = 1;
+                        // printf("%d ", ip);
+                        for (long test_ip = 0; test_ip < np_to_push; ++test_ip)
+                        {
+                            ux_err = fabs(ux_test[test_ip] - ux[ip]) / fabs(ux_test[test_ip]);
+                            uy_err = fabs(uy_test[test_ip] - uy[ip]) / fabs(uy_test[test_ip]);
+                            uz_err = fabs(uz_test[test_ip] - uz[ip]) / fabs(uz_test[test_ip]);
+
+                            if (ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8)
+                            {
+                                break;
+                            }
+                        }
+
+                        if (ux_err > 1e-8)
+                        {
+                            printf("ux_err: %lf", ux_err);
+                            amrex::Abort("ux_err");
+                        }
+                        if (uy_err > 1e-8)
+                        {
+                            printf("uy_err: %lf", uy_err);
+                            amrex::Abort("uy_err");
+                        }
+                        if (uz_err > 1e-8)
+                        {
+                            printf("uz_err: %lf", uz_err);
+                            amrex::Abort("uz_err");
+                        }
+                    }
+
+                    free(sx_m_test), free(sy_m_test), free(sz_m_test);
+                    free(j_m_test), free(k_m_test), free(l_m_test);
+                    free(Exp_test), free(Eyp_test), free(Ezp_test), free(Bxp_test), free(Byp_test), free(Bzp_test);
+                    free(inv_gamma_test);
+                    free(tx_test), free(ty_test), free(tz_test);
+                    free(tsqi_test);
+                    free(sx_test), free(sy_test), free(sz_test);
+                    free(ux_p_test), free(uy_p_test), free(uz_p_test);
+#endif  // PUSH_TEST_ORDER3
+#endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
                 } else if (push_type == PushType::Implicit) {
                     ImplicitPushXP(pti, exfab, eyfab, ezfab,
                                    bxfab, byfab, bzfab,
@@ -8821,6 +8879,751 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
 
     double total = (double)(init_area + aos_area + precompute_area + sort_area + calculate_area + reduce_area);
     printf("init: %lf, aos: %lf, pre: %lf, sort: %lf, cal: %lf, reduce: %lf\n", (double)init_area / total, (double)aos_area / total, (double)precompute_area / total, (double)sort_area / total, (double)calculate_area / total, (double)reduce_area / total);
+}
+
+__arm_new("za") inline void PushPX_sve_sme_physort_fusion_order3_kernel(
+    amrex::Real* aos_arr,
+    amrex::ParticleReal Ex_external_particle,
+    amrex::ParticleReal Ey_external_particle,
+    amrex::ParticleReal Ez_external_particle,
+    amrex::ParticleReal Bx_external_particle,
+    amrex::ParticleReal By_external_particle,
+    amrex::ParticleReal Bz_external_particle,
+    amrex::ParticleReal* const wp,
+    amrex::ParticleReal* const ux,
+    amrex::ParticleReal* const uy,
+    amrex::ParticleReal* const uz,
+    amrex::ParticleReal* m_x,
+    amrex::ParticleReal* m_y,
+    amrex::ParticleReal* m_z,
+    const amrex::ParticleReal& econst,
+    const amrex::Real& dt,
+    const amrex::XDim3& xyzmin,
+    const amrex::XDim3& dinv,
+    int lenx,
+    int leny,
+    int lenz,
+    long np_to_push,
+    ParticleTileType& ptile,
+    vector<vector<int>>& bin_to_ip,
+    ParticleReal* const mx_buffer_ptr,
+    ParticleReal* const my_buffer_ptr,
+    ParticleReal* const mz_buffer_ptr,
+    ParticleReal* const ux_buffer_ptr,
+    ParticleReal* const uy_buffer_ptr,
+    ParticleReal* const uz_buffer_ptr,
+    ParticleReal* const w_buffer_ptr
+    ) __arm_streaming
+{
+    constexpr int nshapes = 3 + 1;
+    int lenxy = lenx * leny;
+    svbool_t p_0_5 = svwhilelt_b64(0, 6);
+    MVec vzero(0);
+
+    constexpr amrex::ParticleReal inv_c2 = 1._prt / (PhysConst::c * PhysConst::c);
+
+    int vl = svcntd();
+
+    amrex::Real sx_m[32];
+    amrex::Real sy_m[32];
+    amrex::Real sz_m[32];
+
+    int& g_move_begin = ptile.g_move_begin;
+    std::vector<int>& g_phys_bin_offset = ptile.g_phys_bin_offset;
+    std::vector<int>& g_phys_bin_length = ptile.g_phys_bin_length;
+
+    int nomove_idx = 0;
+    int move_idx = np_to_push;
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int& offset = g_phys_bin_offset[old_bin];
+                int& binlength = g_phys_bin_length[old_bin];
+                MintVec oldbin_v(old_bin);
+
+                int new_binlength = 0;
+
+                for (int k = 0; k < binlength; k += vl)
+                {
+                    svbool_t p_ip = svwhilelt_b64(k, binlength);
+                    int base = offset + k;
+                    MVec xp_v = MVec::Load(p_ip, m_x + base);
+                    MVec yp_v = MVec::Load(p_ip, m_y + base);
+                    MVec zp_v = MVec::Load(p_ip, m_z + base);
+
+                    const MVec x = (xp_v - xyzmin.x) * dinv.x;
+                    const MVec y = (yp_v - xyzmin.y) * dinv.y;
+                    const MVec z = (zp_v - xyzmin.z) * dinv.z;
+
+                    Mvec_compute_shape_factor_part_sve_order3(sx_m, x, p_ip);
+                    Mvec_compute_shape_factor_part_sve_order3(sy_m, y, p_ip);
+                    Mvec_compute_shape_factor_part_sve_order3(sz_m, z, p_ip);
+
+                    MVec Exp_v(Ex_external_particle);
+                    MVec Eyp_v(Ey_external_particle);
+                    MVec Ezp_v(Ez_external_particle);
+                    MVec Bzp_v(Bz_external_particle);
+                    MVec Byp_v(By_external_particle);
+                    MVec Bxp_v(Bx_external_particle);
+                 
+                    svzero_za();
+
+                    for (int iz = 0; iz < 4; ++iz)
+                    {
+                        MVec sz_m_v = MVec::Load(p_ip, &sz_m[iz * 8]);
+                        
+                        for (int iy = 0; iy < 4; iy++)
+                        {
+                            MVec sy_m_v = MVec::Load(p_ip, &sy_m[iy * 8]);
+                            for (int ix = 0; ix < 4; ix++)
+                            {
+                                MVec sx_m_v = MVec::Load(p_ip, &sx_m[ix * 8]);
+                                MVec aos_v = MVec::Load(p_0_5, &aos_arr[6 * (old_bin + ix + iy * lenx + iz * lenx * leny)]);
+                                MVec sx_sy_sz_m_v = sx_m_v * sy_m_v * sz_m_v;
+                                
+                                svmopa_za64_m(0, p_0_5, p_ip, aos_v, sx_sy_sz_m_v);
+                            }
+                        }
+                    }
+
+                    Exp_v += svread_hor_za64_m(vzero, p_ip, 0, 0);
+                    Eyp_v += svread_hor_za64_m(vzero, p_ip, 0, 1);
+                    Ezp_v += svread_hor_za64_m(vzero, p_ip, 0, 2);
+                    Bzp_v += svread_hor_za64_m(vzero, p_ip, 0, 3);
+                    Byp_v += svread_hor_za64_m(vzero, p_ip, 0, 4);
+                    Bxp_v += svread_hor_za64_m(vzero, p_ip, 0, 5);
+
+                    MVec ux_v = MVec::Load(p_ip, ux + base);
+                    MVec uy_v = MVec::Load(p_ip, uy + base);
+                    MVec uz_v = MVec::Load(p_ip, uz + base);
+
+                    ux_v += econst * Exp_v;
+                    uy_v += econst * Eyp_v;
+                    uz_v += econst * Ezp_v;
+
+                    MVec inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
+
+                    MVec tx_v = econst * inv_gamma_v * Bxp_v;
+                    MVec ty_v = econst * inv_gamma_v * Byp_v;
+                    MVec tz_v = econst * inv_gamma_v * Bzp_v;
+
+                    MVec tsqi_v = 2. / (1. + tx_v * tx_v + ty_v * ty_v + tz_v * tz_v);
+
+                    MVec sx_v = tx_v * tsqi_v;
+                    MVec sy_v = ty_v * tsqi_v;
+                    MVec sz_v = tz_v * tsqi_v;
+
+                    MVec uxp_v = ux_v + uy_v * tz_v - uz_v * ty_v;
+                    MVec uyp_v = uy_v + uz_v * tx_v - ux_v * tz_v;
+                    MVec uzp_v = uz_v + ux_v * ty_v - uy_v * tx_v;
+
+                    ux_v += uyp_v * sz_v - uzp_v * sy_v;
+                    uy_v += uzp_v * sx_v - uxp_v * sz_v;
+                    uz_v += uxp_v * sy_v - uyp_v * sx_v;
+
+                    ux_v += econst * Exp_v;
+                    uy_v += econst * Eyp_v;
+                    uz_v += econst * Ezp_v;
+
+                    // svst1_scatter_index(p_ip, ux, ip_v, ux_v);
+                    // svst1_scatter_index(p_ip, uy, ip_v, uy_v);
+                    // svst1_scatter_index(p_ip, uz, ip_v, uz_v);                     
+
+                    inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
+
+                    xp_v += ux_v * inv_gamma_v * dt;
+                    yp_v += uy_v * inv_gamma_v * dt;
+                    zp_v += uz_v * inv_gamma_v * dt;
+                    
+                    MVec wp_v = MVec::Load(p_ip, wp + base);
+
+                    // svst1_scatter_index(p_ip, m_x, ip_v, xp_v);
+                    // svst1_scatter_index(p_ip, m_y, ip_v, yp_v);
+                    // svst1_scatter_index(p_ip, m_z, ip_v, zp_v);
+
+                    MVec x_new = (xp_v - xyzmin.x) * dinv.x;
+                    MintVec j_nodev = svcvt_s64_f64_z(p_ip, x_new) - 1;
+            
+                    MVec y_new = (yp_v - xyzmin.y) * dinv.y;
+                    MintVec k_nodev = svcvt_s64_f64_z(p_ip, y_new) - 1;
+            
+                    MVec z_new = (zp_v - xyzmin.z) * dinv.z;
+                    MintVec l_nodev = svcvt_s64_f64_z(p_ip, z_new) - 1;
+            
+                    MintVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
+                    svbool_t ip_move = svcmpne_s64(p_ip, newbin_v, oldbin_v);
+                    svbool_t ip_nomove = svnot_b_z(p_ip, ip_move);
+
+                    uint64_t nomove_num = svcntp_b64(p_ip, ip_nomove);
+                    uint64_t move_num = svcntp_b64(p_ip, ip_move);
+
+                    int particles_num = binlength - k < 8 ? binlength - k : 8;
+                    if (nomove_num == particles_num)
+                    {
+                        ux_v.Store(p_ip, ux_buffer_ptr + nomove_idx);
+                        uy_v.Store(p_ip, uy_buffer_ptr + nomove_idx);
+                        uz_v.Store(p_ip, uz_buffer_ptr + nomove_idx);
+                        xp_v.Store(p_ip, mx_buffer_ptr + nomove_idx);
+                        yp_v.Store(p_ip, my_buffer_ptr + nomove_idx);
+                        zp_v.Store(p_ip, mz_buffer_ptr + nomove_idx);
+                        wp_v.Store(p_ip, w_buffer_ptr + nomove_idx);
+
+                        nomove_idx += nomove_num;
+                    }
+                    else if(move_num == particles_num)
+                    {
+                        move_idx -= move_num;
+                        ux_v.Store(p_ip, ux_buffer_ptr + move_idx);
+                        uy_v.Store(p_ip, uy_buffer_ptr + move_idx);
+                        uz_v.Store(p_ip, uz_buffer_ptr + move_idx);
+                        xp_v.Store(p_ip, mx_buffer_ptr + move_idx);
+                        yp_v.Store(p_ip, my_buffer_ptr + move_idx);
+                        zp_v.Store(p_ip, mz_buffer_ptr + move_idx);
+                        wp_v.Store(p_ip, w_buffer_ptr + move_idx);
+                    }
+                    else
+                    {
+                        MVec ux_nomove_v = svcompact_f64(ip_nomove, ux_v);
+                        MVec uy_nomove_v = svcompact_f64(ip_nomove, uy_v);
+                        MVec uz_nomove_v = svcompact_f64(ip_nomove, uz_v);
+                        MVec xp_nomove_v = svcompact_f64(ip_nomove, xp_v);
+                        MVec yp_nomove_v = svcompact_f64(ip_nomove, yp_v);
+                        MVec zp_nomove_v = svcompact_f64(ip_nomove, zp_v);
+                        MVec wp_nomove_v = svcompact_f64(ip_nomove, wp_v);
+    
+                        MVec ux_move_v = svcompact_f64(ip_move, ux_v);
+                        MVec uy_move_v = svcompact_f64(ip_move, uy_v);
+                        MVec uz_move_v = svcompact_f64(ip_move, uz_v);
+                        MVec xp_move_v = svcompact_f64(ip_move, xp_v);
+                        MVec yp_move_v = svcompact_f64(ip_move, yp_v);
+                        MVec zp_move_v = svcompact_f64(ip_move, zp_v);
+                        MVec wp_move_v = svcompact_f64(ip_move, wp_v);
+    
+                        svbool_t p_nomove = svwhilelt_b64(0ULL, nomove_num);
+                        svbool_t p_move = svwhilelt_b64(0ULL, move_num);
+    
+                        ux_nomove_v.Store(p_nomove, ux_buffer_ptr + nomove_idx);
+                        uy_nomove_v.Store(p_nomove, uy_buffer_ptr + nomove_idx);
+                        uz_nomove_v.Store(p_nomove, uz_buffer_ptr + nomove_idx);
+                        xp_nomove_v.Store(p_nomove, mx_buffer_ptr + nomove_idx);
+                        yp_nomove_v.Store(p_nomove, my_buffer_ptr + nomove_idx);
+                        zp_nomove_v.Store(p_nomove, mz_buffer_ptr + nomove_idx);
+                        wp_nomove_v.Store(p_nomove, w_buffer_ptr + nomove_idx);
+
+                        nomove_idx += nomove_num;
+
+                        move_idx -= move_num;
+    
+                        ux_move_v.Store(p_move, ux_buffer_ptr + move_idx);
+                        uy_move_v.Store(p_move, uy_buffer_ptr + move_idx);
+                        uz_move_v.Store(p_move, uz_buffer_ptr + move_idx);
+                        xp_move_v.Store(p_move, mx_buffer_ptr + move_idx);
+                        yp_move_v.Store(p_move, my_buffer_ptr + move_idx);
+                        zp_move_v.Store(p_move, mz_buffer_ptr + move_idx);
+                        wp_move_v.Store(p_move, w_buffer_ptr + move_idx);
+                    }
+
+                    new_binlength += nomove_num;
+                }
+
+                const vector<int>& tmp_particle = bin_to_ip[old_bin];
+                int tmp_binlength = tmp_particle.size();
+
+                // int inr_binlength = inr_bin_length[old_bin];
+                // int inr_binoffset = inr_bin_offsets[old_bin];
+
+                // for (int k = 0; k < inr_binlength; k += vl)
+                for (int k = 0; k < tmp_binlength; k += vl)
+                {
+                    svbool_t p_ip = svwhilelt_b64(k, tmp_binlength);
+                    MintVec ip_v = svld1sw_s64(p_ip, &tmp_particle[k]);
+                    // svbool_t p_ip = svwhilelt_b64(k, inr_binlength);
+                    // MintVec ip_v = svld1sw_s64(p_ip, &local_index[inr_binoffset + k]);
+
+                    MVec xp_v = svld1_gather_s64index_f64(p_ip, m_x, ip_v);
+                    MVec yp_v = svld1_gather_s64index_f64(p_ip, m_y, ip_v);
+                    MVec zp_v = svld1_gather_s64index_f64(p_ip, m_z, ip_v);
+                    const MVec x = (xp_v - xyzmin.x) * dinv.x;
+                    const MVec y = (yp_v - xyzmin.y) * dinv.y;
+                    const MVec z = (zp_v - xyzmin.z) * dinv.z;
+
+                    Mvec_compute_shape_factor_part_sve_order3(sx_m, x, p_ip);
+                    Mvec_compute_shape_factor_part_sve_order3(sy_m, y, p_ip);
+                    Mvec_compute_shape_factor_part_sve_order3(sz_m, z, p_ip);
+
+                    MVec Exp_v(Ex_external_particle);
+                    MVec Eyp_v(Ey_external_particle);
+                    MVec Ezp_v(Ez_external_particle);
+                    MVec Bzp_v(Bz_external_particle);
+                    MVec Byp_v(By_external_particle);
+                    MVec Bxp_v(Bx_external_particle);
+                 
+                    svzero_za();
+
+                    for (int iz = 0; iz < 4; ++iz)
+                    {
+                        MVec sz_m_v = MVec::Load(p_ip, &sz_m[iz * 8]);
+                        
+                        for (int iy = 0; iy < 4; iy++)
+                        {
+                            MVec sy_m_v = MVec::Load(p_ip, &sy_m[iy * 8]);
+                            for (int ix = 0; ix < 4; ix++)
+                            {
+                                MVec sx_m_v = MVec::Load(p_ip, &sx_m[ix * 8]);
+                                MVec aos_v = MVec::Load(p_0_5, &aos_arr[6 * (old_bin + ix + iy * lenx + iz * lenx * leny)]);
+                                MVec sx_sy_sz_m_v = sx_m_v * sy_m_v * sz_m_v;
+                                
+                                svmopa_za64_m(0, p_0_5, p_ip, aos_v, sx_sy_sz_m_v);
+                            }
+                        }
+                    }
+
+                    Exp_v += svread_hor_za64_m(vzero, p_ip, 0, 0);
+                    Eyp_v += svread_hor_za64_m(vzero, p_ip, 0, 1);
+                    Ezp_v += svread_hor_za64_m(vzero, p_ip, 0, 2);
+                    Bzp_v += svread_hor_za64_m(vzero, p_ip, 0, 3);
+                    Byp_v += svread_hor_za64_m(vzero, p_ip, 0, 4);
+                    Bxp_v += svread_hor_za64_m(vzero, p_ip, 0, 5);
+
+                    MVec ux_v = svld1_gather_s64index_f64(p_ip, ux, ip_v);
+                    MVec uy_v = svld1_gather_s64index_f64(p_ip, uy, ip_v);
+                    MVec uz_v = svld1_gather_s64index_f64(p_ip, uz, ip_v);
+
+                    ux_v += econst * Exp_v;
+                    uy_v += econst * Eyp_v;
+                    uz_v += econst * Ezp_v;
+
+                    MVec inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
+
+                    MVec tx_v = econst * inv_gamma_v * Bxp_v;
+                    MVec ty_v = econst * inv_gamma_v * Byp_v;
+                    MVec tz_v = econst * inv_gamma_v * Bzp_v;
+
+                    MVec tsqi_v = 2. / (1. + tx_v * tx_v + ty_v * ty_v + tz_v * tz_v);
+
+                    MVec sx_v = tx_v * tsqi_v;
+                    MVec sy_v = ty_v * tsqi_v;
+                    MVec sz_v = tz_v * tsqi_v;
+
+                    MVec uxp_v = ux_v + uy_v * tz_v - uz_v * ty_v;
+                    MVec uyp_v = uy_v + uz_v * tx_v - ux_v * tz_v;
+                    MVec uzp_v = uz_v + ux_v * ty_v - uy_v * tx_v;
+
+                    ux_v += uyp_v * sz_v - uzp_v * sy_v;
+                    uy_v += uzp_v * sx_v - uxp_v * sz_v;
+                    uz_v += uxp_v * sy_v - uyp_v * sx_v;
+
+                    ux_v += econst * Exp_v;
+                    uy_v += econst * Eyp_v;
+                    uz_v += econst * Ezp_v;
+
+                    // svst1_scatter_index(p_ip, ux, ip_v, ux_v);
+                    // svst1_scatter_index(p_ip, uy, ip_v, uy_v);
+                    // svst1_scatter_index(p_ip, uz, ip_v, uz_v);                     
+
+                    inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
+
+                    xp_v += ux_v * inv_gamma_v * dt;
+                    yp_v += uy_v * inv_gamma_v * dt;
+                    zp_v += uz_v * inv_gamma_v * dt;
+                    
+                    MVec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+
+                    // svst1_scatter_index(p_ip, m_x, ip_v, xp_v);
+                    // svst1_scatter_index(p_ip, m_y, ip_v, yp_v);
+                    // svst1_scatter_index(p_ip, m_z, ip_v, zp_v);
+
+                    MVec x_new = (xp_v - xyzmin.x) * dinv.x;
+                    MintVec j_nodev = svcvt_s64_f64_z(p_ip, x_new) - 1;
+            
+                    MVec y_new = (yp_v - xyzmin.y) * dinv.y;
+                    MintVec k_nodev = svcvt_s64_f64_z(p_ip, y_new) - 1;
+            
+                    MVec z_new = (zp_v - xyzmin.z) * dinv.z;
+                    MintVec l_nodev = svcvt_s64_f64_z(p_ip, z_new) - 1;
+            
+                    MintVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
+                    svbool_t ip_move = svcmpne_s64(p_ip, newbin_v, oldbin_v);
+                    svbool_t ip_nomove = svnot_b_z(p_ip, ip_move);
+
+                    uint64_t nomove_num = svcntp_b64(p_ip, ip_nomove);
+                    uint64_t move_num = svcntp_b64(p_ip, ip_move);
+
+                    MVec ux_nomove_v = svcompact_f64(ip_nomove, ux_v);
+                    MVec uy_nomove_v = svcompact_f64(ip_nomove, uy_v);
+                    MVec uz_nomove_v = svcompact_f64(ip_nomove, uz_v);
+                    MVec xp_nomove_v = svcompact_f64(ip_nomove, xp_v);
+                    MVec yp_nomove_v = svcompact_f64(ip_nomove, yp_v);
+                    MVec zp_nomove_v = svcompact_f64(ip_nomove, zp_v);
+                    MVec wp_nomove_v = svcompact_f64(ip_nomove, wp_v);
+
+                    MVec ux_move_v = svcompact_f64(ip_move, ux_v);
+                    MVec uy_move_v = svcompact_f64(ip_move, uy_v);
+                    MVec uz_move_v = svcompact_f64(ip_move, uz_v);
+                    MVec xp_move_v = svcompact_f64(ip_move, xp_v);
+                    MVec yp_move_v = svcompact_f64(ip_move, yp_v);
+                    MVec zp_move_v = svcompact_f64(ip_move, zp_v);
+                    MVec wp_move_v = svcompact_f64(ip_move, wp_v);
+
+                    svbool_t p_nomove = svwhilelt_b64(0ULL, nomove_num);
+                    svbool_t p_move = svwhilelt_b64(0ULL, move_num);
+
+                    ux_nomove_v.Store(p_nomove, ux_buffer_ptr + nomove_idx);
+                    uy_nomove_v.Store(p_nomove, uy_buffer_ptr + nomove_idx);
+                    uz_nomove_v.Store(p_nomove, uz_buffer_ptr + nomove_idx);
+                    xp_nomove_v.Store(p_nomove, mx_buffer_ptr + nomove_idx);
+                    yp_nomove_v.Store(p_nomove, my_buffer_ptr + nomove_idx);
+                    zp_nomove_v.Store(p_nomove, mz_buffer_ptr + nomove_idx);
+                    wp_nomove_v.Store(p_nomove, w_buffer_ptr + nomove_idx);
+
+                    nomove_idx += nomove_num;
+
+                    move_idx -= move_num;
+
+                    ux_move_v.Store(p_move, ux_buffer_ptr + move_idx);
+                    uy_move_v.Store(p_move, uy_buffer_ptr + move_idx);
+                    uz_move_v.Store(p_move, uz_buffer_ptr + move_idx);
+                    xp_move_v.Store(p_move, mx_buffer_ptr + move_idx);
+                    yp_move_v.Store(p_move, my_buffer_ptr + move_idx);
+                    zp_move_v.Store(p_move, mz_buffer_ptr + move_idx);
+                    wp_move_v.Store(p_move, w_buffer_ptr + move_idx);
+
+                    new_binlength += nomove_num;
+                }
+
+                binlength = new_binlength;
+                offset = nomove_idx - binlength;
+            }
+        }
+    }
+
+    g_move_begin = move_idx;
+    printf("np_to_push: %ld, nomove_idx: %d, move_idx: %d\n", np_to_push, nomove_idx, move_idx);
+}
+
+void
+PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& pti,
+                                   amrex::FArrayBox const * exfab,
+                                   amrex::FArrayBox const * eyfab,
+                                   amrex::FArrayBox const * ezfab,
+                                   amrex::FArrayBox const * bxfab,
+                                   amrex::FArrayBox const * byfab,
+                                   amrex::FArrayBox const * bzfab,
+                                   const amrex::IntVect ngEB, const int /*e_is_nodal*/,
+                                   const long offset,
+                                   const long np_to_push,
+                                   int lev, int gather_lev,
+                                   amrex::Real dt, ScaleFields scaleFields,
+                                   DtType a_dt_type)
+{
+    uint64_t init_area = 0;
+    uint64_t aos_area = 0;
+    uint64_t precompute_area = 0;
+    uint64_t sort_area = 0;
+    uint64_t calculate_area = 0;
+    uint64_t reduce_area = 0;
+
+    uint64_t init_start = rdtscv();
+    const int thread_num = omp_get_thread_num();
+
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE((gather_lev==(lev-1)) ||
+                                     (gather_lev==(lev  )),
+                                     "Gather buffers only work for lev-1");
+
+    using RType = amrex::ParticleReal;
+    using namespace amrex::literals;
+    using namespace amrex;
+
+    if (np_to_push == 0) { return; }
+    
+    auto& soa = pti.GetStructOfArrays();
+    RType* AMREX_RESTRICT m_x = soa.GetRealData(PIdx::x).dataPtr();
+    RType* AMREX_RESTRICT m_y = soa.GetRealData(PIdx::y).dataPtr();
+    RType* AMREX_RESTRICT m_z = soa.GetRealData(PIdx::z).dataPtr();
+    
+    const amrex::XDim3 dinv = WarpX::InvCellSize(std::max(gather_lev, 0));
+
+    Box box;
+    if (lev == gather_lev) {
+        box = pti.tilebox();
+    } else {
+        const IntVect& ref_ratio = WarpX::RefRatio(gather_lev);
+        box = amrex::coarsen(pti.tilebox(), ref_ratio);
+    }
+
+    box.grow(ngEB);
+
+    const amrex::ParticleReal Ex_external_particle = m_E_external_particle[0];
+    const amrex::ParticleReal Ey_external_particle = m_E_external_particle[1];
+    const amrex::ParticleReal Ez_external_particle = m_E_external_particle[2];
+    const amrex::ParticleReal Bx_external_particle = m_B_external_particle[0];
+    const amrex::ParticleReal By_external_particle = m_B_external_particle[1];
+    const amrex::ParticleReal Bz_external_particle = m_B_external_particle[2];
+
+    const amrex::XDim3 xyzmin = WarpX::LowerCorner(box, gather_lev, 0._rt);
+
+    const Dim3 len = length(box);
+    int lenx = len.x;
+    int leny = len.y;
+    int lenz = len.z;
+    int num_bin = lenx * leny * lenz;
+
+    init_area += rdtscv() - init_start;
+
+    uint64_t aos_start = rdtscv();
+     
+    int m_box_size = WarpX::GetInstance().m_box_size;
+    amrex::Real* aos_arr = WarpX::GetInstance().aos_arr + thread_num * 6 * m_box_size;
+
+    aos_area += rdtscv() - aos_start;
+
+    init_start = rdtscv();
+    auto& attribs = pti.GetAttribs();
+    ParticleReal* const AMREX_RESTRICT wp = attribs[PIdx::w].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
+
+    auto& mx_buffer = pti.GetAttribs(this->getParticleComps()["mx_buffer"]);
+    auto& my_buffer = pti.GetAttribs(this->getParticleComps()["my_buffer"]);
+    auto& mz_buffer = pti.GetAttribs(this->getParticleComps()["mz_buffer"]);
+    
+    auto& ux_buffer = pti.GetAttribs(this->getParticleComps()["ux_buffer"]);
+    auto& uy_buffer = pti.GetAttribs(this->getParticleComps()["uy_buffer"]);
+    auto& uz_buffer = pti.GetAttribs(this->getParticleComps()["uz_buffer"]);
+    auto& w_buffer = pti.GetAttribs(this->getParticleComps()["w_buffer"]);
+        
+    ParticleReal* const AMREX_RESTRICT mx_buffer_ptr = mx_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT my_buffer_ptr = my_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT mz_buffer_ptr = mz_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT ux_buffer_ptr = ux_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uy_buffer_ptr = uy_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uz_buffer_ptr = uz_buffer.dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT w_buffer_ptr = w_buffer.dataPtr() + offset;
+
+    const amrex::ParticleReal q = this->charge;
+    const amrex::ParticleReal m = this->mass;
+
+    const amrex::ParticleReal econst = 0.5_prt * q * dt / m;
+
+    int vl = svcntd();
+
+    long tmpbin[8];
+
+    auto& ptile = ParticlesAt(lev, pti);
+    int& g_move_begin = ptile.g_move_begin;
+
+    std::vector<std::vector<int>> bin_to_ip(num_bin);
+
+    for (long ip = g_move_begin; ip < np_to_push; ip += vl)
+    {
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
+        Vec xp_v = Vec::Load(p_ip, &mx_buffer_ptr[ip]);
+        Vec yp_v = Vec::Load(p_ip, &my_buffer_ptr[ip]);
+        Vec zp_v = Vec::Load(p_ip, &mz_buffer_ptr[ip]);
+
+        Vec x = (xp_v - xyzmin.x) * dinv.x;
+        intVec j_nodev = svcvt_s64_f64_z(p_ip, x) - 1;
+        
+        Vec y = (yp_v - xyzmin.y) * dinv.y;
+        intVec k_nodev = svcvt_s64_f64_z(p_ip, y) - 1;
+        
+        Vec z = (zp_v - xyzmin.z) * dinv.z;
+        intVec l_nodev = svcvt_s64_f64_z(p_ip, z) - 1;
+        
+        intVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
+        newbin_v.Store(p_ip, tmpbin);
+        
+        int num_particles = svcntp_b64(p_ip, p_ip);
+        for (int k = 0; k < num_particles; ++k)
+        {
+            bin_to_ip[tmpbin[k]].push_back((int)(ip + k));
+        }
+    }
+
+    uint64_t calculate_start = rdtscv();
+    PushPX_sve_sme_physort_fusion_order3_kernel(
+        aos_arr, 
+        Ex_external_particle, Ey_external_particle, Ez_external_particle,
+        Bx_external_particle, By_external_particle, Bz_external_particle, 
+        wp, ux, uy, uz,
+        m_x, m_y, m_z,
+        econst, dt,
+        xyzmin, dinv,
+        lenx, leny, lenz, np_to_push,
+        ptile, bin_to_ip,
+        mx_buffer_ptr, my_buffer_ptr, mz_buffer_ptr, ux_buffer_ptr, uy_buffer_ptr, uz_buffer_ptr, w_buffer_ptr 
+    );
+    calculate_area += rdtscv() - calculate_start;
+
+    // 操作完成后进行指针交换
+    uint64_t reduce_start = rdtscv();
+    attribs[PIdx::x].swap(mx_buffer);
+    attribs[PIdx::y].swap(my_buffer);
+    attribs[PIdx::z].swap(mz_buffer);
+    attribs[PIdx::ux].swap(ux_buffer);
+    attribs[PIdx::uy].swap(uy_buffer);
+    attribs[PIdx::uz].swap(uz_buffer);
+    attribs[PIdx::w].swap(w_buffer);
+    reduce_area += rdtscv() - reduce_start;
+
+    Box realbox = pti.tilebox();
+    const Dim3 reallo = lbound(realbox);
+    const Dim3 realhi = ubound(realbox);
+
+    const Dim3 growlo = lbound(box);
+    const Dim3 growhi = ubound(box);
+
+    int containlox = reallo.x - growlo.x - 1;
+    int containloy = reallo.y - growlo.y - 1;
+    int containloz = reallo.z - growlo.z - 1;
+    int containhix = realhi.x - growlo.x - 1;
+    int containhiy = realhi.y - growlo.y - 1;
+    int containhiz = realhi.z - growlo.z - 1;
+
+    int m_init_np = WarpX::GetInstance().m_init_np;
+    int* outside_particles = WarpX::GetInstance().int_buffer + thread_num * m_init_np;
+    int outside_particles_index = 0;
+
+    intVec containlox_v(containlox);
+    intVec containloy_v(containloy);
+    intVec containloz_v(containloz);
+    intVec containhix_v(containhix);
+    intVec containhiy_v(containhiy);
+    intVec containhiz_v(containhiz);
+
+    for (long ip = g_move_begin; ip < np_to_push; ip += vl)
+    {
+        // ParticleReal xp = mx_buffer_ptr[ip];
+        // ParticleReal yp = my_buffer_ptr[ip];
+        // ParticleReal zp = mz_buffer_ptr[ip];
+
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
+        Vec xp_v = Vec::Load(p_ip, &mx_buffer_ptr[ip]);
+        Vec yp_v = Vec::Load(p_ip, &my_buffer_ptr[ip]);
+        Vec zp_v = Vec::Load(p_ip, &mz_buffer_ptr[ip]);
+
+        // int j = (int)((xp - xyzmin.x) * dinv.x) - 1;
+        // int k = (int)((yp - xyzmin.y) * dinv.y) - 1;
+        // int l = (int)((zp - xyzmin.z) * dinv.z) - 1;
+
+        Vec x = (xp_v - xyzmin.x) * dinv.x;
+        Vec y = (yp_v - xyzmin.y) * dinv.y;
+        Vec z = (zp_v - xyzmin.z) * dinv.z;
+
+        intVec j_nodev = svcvt_s64_f64_z(p_ip, x) - 1;
+        intVec k_nodev = svcvt_s64_f64_z(p_ip, y) - 1;
+        intVec l_nodev = svcvt_s64_f64_z(p_ip, z) - 1;
+        
+        // if (j < containlox || j > containhix || k < containloy || k > containhiy || l < containloz || l > containhiz)
+        // {
+        //     outside_particles[outside_particles_index] = ip;
+        //     outside_particles_index++;
+        // }
+
+        svbool_t p_is_lox_or_hix = svorr_b_z(p_ip, svcmplt_s64(p_ip, j_nodev, containlox_v), svcmpgt_s64(p_ip, j_nodev, containhix_v));
+        svbool_t p_is_loy_or_hiy = svorr_b_z(p_ip, svcmplt_s64(p_ip, k_nodev, containloy_v), svcmpgt_s64(p_ip, k_nodev, containhiy_v));
+        svbool_t p_is_loz_or_hiz = svorr_b_z(p_ip, svcmplt_s64(p_ip, l_nodev, containloz_v), svcmpgt_s64(p_ip, l_nodev, containhiz_v));
+
+        svbool_t p_is_outside = svorr_b_z(p_ip, p_is_lox_or_hix, p_is_loy_or_hiy);
+        p_is_outside = svorr_b_z(p_ip, p_is_outside, p_is_loz_or_hiz);
+
+        intVec ip_v = svindex_s64(ip, 1);
+        intVec ip_outside_v = svcompact_s64(p_is_outside, ip_v);
+        uint64_t num_outside = svcntp_b64(p_is_outside, p_is_outside);
+        if (num_outside > 0)
+        {
+            svbool_t p_outside = svwhilelt_b64(0ULL, num_outside);
+            svst1w(p_outside, outside_particles + outside_particles_index, ip_outside_v);
+            outside_particles_index += num_outside;
+        }
+    }
+
+    printf("outside_particles num: %d\n", outside_particles_index);
+
+    int tail = np_to_push - 1;
+    int tail_outside_index = outside_particles_index - 1;
+    while (tail_outside_index >= 0 && tail - outside_particles[tail_outside_index] < vl)
+    {
+        long ip = outside_particles[tail_outside_index];
+        ParticleReal mx_tmp = mx_buffer_ptr[ip];
+        ParticleReal my_tmp = my_buffer_ptr[ip];
+        ParticleReal mz_tmp = mz_buffer_ptr[ip];
+        ParticleReal ux_tmp = ux_buffer_ptr[ip];
+        ParticleReal uy_tmp = uy_buffer_ptr[ip];
+        ParticleReal uz_tmp = uz_buffer_ptr[ip];
+        ParticleReal w_tmp = w_buffer_ptr[ip];
+        
+        mx_buffer_ptr[ip] = mx_buffer_ptr[tail];
+        my_buffer_ptr[ip] = my_buffer_ptr[tail];
+        mz_buffer_ptr[ip] = mz_buffer_ptr[tail];
+        ux_buffer_ptr[ip] = ux_buffer_ptr[tail];
+        uy_buffer_ptr[ip] = uy_buffer_ptr[tail];
+        uz_buffer_ptr[ip] = uz_buffer_ptr[tail];
+        w_buffer_ptr[ip] = w_buffer_ptr[tail];
+
+        mx_buffer_ptr[tail] = mx_tmp;
+        my_buffer_ptr[tail] = my_tmp;
+        mz_buffer_ptr[tail] = mz_tmp;
+        ux_buffer_ptr[tail] = ux_tmp;
+        uy_buffer_ptr[tail] = uy_tmp;
+        uz_buffer_ptr[tail] = uz_tmp;
+        w_buffer_ptr[tail] = w_tmp;
+        tail--;
+
+        tail_outside_index--;
+    }
+
+    while (tail_outside_index >= 0)
+    {
+        svbool_t p_ip = svwhilele_b64(0ULL, tail_outside_index);
+        uint64_t num_outside = svcntp_b64(p_ip, p_ip);
+
+        // printf("num_outside: %ld\n", num_outside);
+
+        intVec ip_v = svld1sw_s64(p_ip, outside_particles + tail_outside_index - num_outside + 1);
+        Vec mx_outside_v = svld1_gather_index(p_ip, mx_buffer_ptr, ip_v);
+        Vec my_outside_v = svld1_gather_index(p_ip, my_buffer_ptr, ip_v);
+        Vec mz_outside_v = svld1_gather_index(p_ip, mz_buffer_ptr, ip_v);
+        Vec ux_outside_v = svld1_gather_index(p_ip, ux_buffer_ptr, ip_v);
+        Vec uy_outside_v = svld1_gather_index(p_ip, uy_buffer_ptr, ip_v);
+        Vec uz_outside_v = svld1_gather_index(p_ip, uz_buffer_ptr, ip_v);
+        Vec w_outside_v = svld1_gather_index(p_ip, w_buffer_ptr, ip_v);
+        
+        Vec mx_inside_v = Vec::Load(p_ip, mx_buffer_ptr + tail - num_outside + 1);
+        Vec my_inside_v = Vec::Load(p_ip, my_buffer_ptr + tail - num_outside + 1);
+        Vec mz_inside_v = Vec::Load(p_ip, mz_buffer_ptr + tail - num_outside + 1);
+        Vec ux_inside_v = Vec::Load(p_ip, ux_buffer_ptr + tail - num_outside + 1);
+        Vec uy_inside_v = Vec::Load(p_ip, uy_buffer_ptr + tail - num_outside + 1);
+        Vec uz_inside_v = Vec::Load(p_ip, uz_buffer_ptr + tail - num_outside + 1);
+        Vec w_inside_v = Vec::Load(p_ip, w_buffer_ptr + tail - num_outside + 1);
+
+        mx_outside_v.Store(p_ip, mx_buffer_ptr + tail - num_outside + 1);
+        my_outside_v.Store(p_ip, my_buffer_ptr + tail - num_outside + 1);
+        mz_outside_v.Store(p_ip, mz_buffer_ptr + tail - num_outside + 1);
+        ux_outside_v.Store(p_ip, ux_buffer_ptr + tail - num_outside + 1);
+        uy_outside_v.Store(p_ip, uy_buffer_ptr + tail - num_outside + 1);
+        uz_outside_v.Store(p_ip, uz_buffer_ptr + tail - num_outside + 1);
+        w_outside_v.Store(p_ip, w_buffer_ptr + tail - num_outside + 1);
+
+        tail -= num_outside;
+        svst1_scatter_index(p_ip, mx_buffer_ptr, ip_v, mx_inside_v);
+        svst1_scatter_index(p_ip, my_buffer_ptr, ip_v, my_inside_v);
+        svst1_scatter_index(p_ip, mz_buffer_ptr, ip_v, mz_inside_v);
+        svst1_scatter_index(p_ip, ux_buffer_ptr, ip_v, ux_inside_v);
+        svst1_scatter_index(p_ip, uy_buffer_ptr, ip_v, uy_inside_v);
+        svst1_scatter_index(p_ip, uz_buffer_ptr, ip_v, uz_inside_v);
+        svst1_scatter_index(p_ip, w_buffer_ptr, ip_v, w_inside_v);
+
+        tail_outside_index -= num_outside;
+    }
+
+    ptile.g_new_particles_begin = tail + 1;
 }
 
 /* \brief Perform the implicit particle push operation in one fused kernel
