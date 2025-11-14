@@ -2984,6 +2984,95 @@ PhysicalParticleContainer::Evolve (int lev,
                             0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
                             a_dt_type);
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+
+#ifdef PUSH_TEST_ORDER3
+#if defined(PUSH_ORG_ORDER3) || defined(PUSH_BASELINE_ORDER3) || defined(PUSH_SVE_ORDER3) || defined(PUSH_SVE_SME_MICRO_ORDER3) || defined(PUSH_SVE_SME_LARGE_ORDER3)
+                    const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
+
+                    for (long ip = 0; ip < np_to_push; ++ip)
+                    {
+                        double ux_err = fabs(ux_test[ip] - ux[ip]) / fabs(ux_test[ip]);
+                        double uy_err = fabs(uy_test[ip] - uy[ip]) / fabs(uy_test[ip]);
+                        double uz_err = fabs(uz_test[ip] - uz[ip]) / fabs(uz_test[ip]);
+
+                        if (ux_err > 1e-8)
+                        {
+                            printf("ux_err: %lf\n", ux_err);
+                            amrex::Abort("ux_err");
+                        }
+                        if (uy_err > 1e-8)
+                        {
+                            printf("uy_err: %lf\n", uy_err);
+                            amrex::Abort("uy_err");
+                        }
+                        if (uz_err > 1e-8)
+                        {
+                            printf("uz_err: %lf\n", uz_err);
+                            amrex::Abort("uz_err");
+                        }
+                    }
+
+                    free(sx_m_test), free(sy_m_test), free(sz_m_test);
+                    free(j_m_test), free(k_m_test), free(l_m_test);
+                    free(Exp_test), free(Eyp_test), free(Ezp_test), free(Bxp_test), free(Byp_test), free(Bzp_test);
+                    free(inv_gamma_test);
+                    free(tx_test), free(ty_test), free(tz_test);
+                    free(tsqi_test);
+                    free(sx_test), free(sy_test), free(sz_test);
+                    free(ux_p_test), free(uy_p_test), free(uz_p_test);
+#elif defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+                    const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
+                    const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
+
+                    for (long ip = 0; ip < np_to_push; ++ip)
+                    {
+                        double ux_err = 1;
+                        double uy_err = 1;
+                        double uz_err = 1;
+                        // printf("%d ", ip);
+                        for (long test_ip = 0; test_ip < np_to_push; ++test_ip)
+                        {
+                            ux_err = fabs(ux_test[test_ip] - ux[ip]) / fabs(ux_test[test_ip]);
+                            uy_err = fabs(uy_test[test_ip] - uy[ip]) / fabs(uy_test[test_ip]);
+                            uz_err = fabs(uz_test[test_ip] - uz[ip]) / fabs(uz_test[test_ip]);
+
+                            if (ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8)
+                            {
+                                break;
+                            }
+                        }
+
+                        if (ux_err > 1e-8)
+                        {
+                            printf("ux_err: %lf", ux_err);
+                            amrex::Abort("ux_err");
+                        }
+                        if (uy_err > 1e-8)
+                        {
+                            printf("uy_err: %lf", uy_err);
+                            amrex::Abort("uy_err");
+                        }
+                        if (uz_err > 1e-8)
+                        {
+                            printf("uz_err: %lf", uz_err);
+                            amrex::Abort("uz_err");
+                        }
+                    }
+
+                    free(sx_m_test), free(sy_m_test), free(sz_m_test);
+                    free(j_m_test), free(k_m_test), free(l_m_test);
+                    free(Exp_test), free(Eyp_test), free(Ezp_test), free(Bxp_test), free(Byp_test), free(Bzp_test);
+                    free(inv_gamma_test);
+                    free(tx_test), free(ty_test), free(tz_test);
+                    free(tsqi_test);
+                    free(sx_test), free(sy_test), free(sz_test);
+                    free(ux_p_test), free(uy_p_test), free(uz_p_test);
+
+#endif
+#endif  // PUSH_TEST_ORDER3
                 } else if (push_type == PushType::Implicit) {
                     ImplicitPushXP(pti, exfab, eyfab, ezfab,
                                    bxfab, byfab, bzfab,
