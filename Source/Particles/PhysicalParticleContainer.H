@@ -429,19 +429,16 @@ public:
                          amrex::Real dt, ScaleFields scaleFields,
                          DtType a_dt_type=DtType::Full);
 
-    virtual void PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& pti,
-                         amrex::FArrayBox const * exfab,
-                         amrex::FArrayBox const * eyfab,
-                         amrex::FArrayBox const * ezfab,
-                         amrex::FArrayBox const * bxfab,
-                         amrex::FArrayBox const * byfab,
-                         amrex::FArrayBox const * bzfab,
-                         amrex::IntVect ngEB, int /*e_is_nodal*/,
+    virtual bool my_locateParticle (WarpXParIter& pti,
+                         amrex::ParticleLocData& pld,
+                         amrex::Particle<0, 0>& p_prime,
+                         int lev);
+
+    virtual void fusion_pack(WarpXParIter& pti,
+                         amrex::IntVect ngEB,
                          long offset,
                          long np_to_push,
-                         int lev, int gather_lev,
-                         amrex::Real dt, ScaleFields scaleFields,
-                         DtType a_dt_type=DtType::Full);
+                         int lev, int gather_lev);
 
     void ImplicitPushXP (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,

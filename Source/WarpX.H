@@ -366,6 +366,9 @@ public:
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uz_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_w_buffer_arr;
 
+    const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
+    std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
+
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;
     //! Specifies the type of grid used for the above sorting, i.e. cell-centered, nodal, or mixed

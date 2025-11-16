@@ -542,6 +542,12 @@ WarpX::InitTempVectors()
         thread_private_w_buffer_arr[i].resize(m_init_np);
     }
 #endif
+
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+    for (int i = 0; i < ParallelContext::NProcsSub(); ++i) {
+        remote_send_allcomps[i].resize(max_threads);
+    }
+#endif
 }
 
 void

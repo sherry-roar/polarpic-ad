@@ -2968,11 +2968,12 @@ PhysicalParticleContainer::Evolve (int lev,
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
                     printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
-                    PushPX_sve_sme_physort_fusion_order3(pti, exfab, eyfab, ezfab,
+                    PushPX_sve_sme_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
                             0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
                             a_dt_type);
+                    fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
 #ifdef PUSH_TEST_ORDER3
@@ -8575,471 +8576,212 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
     printf("init: %lf, aos: %lf, pre: %lf, sort: %lf, cal: %lf, reduce: %lf\n", (double)init_area / total, (double)aos_area / total, (double)precompute_area / total, (double)sort_area / total, (double)calculate_area / total, (double)reduce_area / total);
 }
 
-__arm_new("za") inline void PushPX_sve_sme_physort_fusion_order3_kernel(
-    amrex::Real* aos_arr,
-    amrex::ParticleReal Ex_external_particle,
-    amrex::ParticleReal Ey_external_particle,
-    amrex::ParticleReal Ez_external_particle,
-    amrex::ParticleReal Bx_external_particle,
-    amrex::ParticleReal By_external_particle,
-    amrex::ParticleReal Bz_external_particle,
-    amrex::ParticleReal* const wp,
-    amrex::ParticleReal* const ux,
-    amrex::ParticleReal* const uy,
-    amrex::ParticleReal* const uz,
-    amrex::ParticleReal* m_x,
-    amrex::ParticleReal* m_y,
-    amrex::ParticleReal* m_z,
-    const amrex::ParticleReal& econst,
-    const amrex::Real& dt,
-    const amrex::XDim3& xyzmin,
-    const amrex::XDim3& dinv,
-    int lenx,
-    int leny,
-    int lenz,
-    long np_to_push,
-    ParticleTileType& ptile,
-    vector<vector<int>>& bin_to_ip,
-    ParticleReal* const mx_buffer_ptr,
-    ParticleReal* const my_buffer_ptr,
-    ParticleReal* const mz_buffer_ptr,
-    ParticleReal* const ux_buffer_ptr,
-    ParticleReal* const uy_buffer_ptr,
-    ParticleReal* const uz_buffer_ptr,
-    ParticleReal* const w_buffer_ptr
-    ) __arm_streaming
+bool
+PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
+                                   ParticleLocData& pld,
+                                   Particle<0, 0>& p_prime,
+                                   int lev)
 {
-    constexpr int nshapes = 3 + 1;
-    int lenxy = lenx * leny;
-    svbool_t p_0_5 = svwhilelt_b64(0, 6);
-    MVec vzero(0);
+    const Geometry& geom = Geom(0);
+    const auto plo = geom.ProbLoArray();      // Real 类型：[x_lo, y_lo, z_lo]
+    const auto phi = geom.ProbHiArray();      // Real 类型：[x_hi, y_hi, z_hi]
+    const auto rlo = geom.ProbLoArrayInParticleReal();  // ParticleReal：[x_lo, y_lo, z_lo]，roundoff_lo 
+    const auto rhi = geom.ProbHiArrayInParticleReal();  // ParticleReal：[x_hi, y_hi, z_hi]，roundoff_hi
+    const auto is_per = geom.isPeriodicArray();         // int 数组：[is_per_x, is_per_y, is_per_z]
 
-    constexpr amrex::ParticleReal inv_c2 = 1._prt / (PhysConst::c * PhysConst::c);
+    ParticleReal& xp = p_prime.pos(0);
+    ParticleReal& yp = p_prime.pos(1);
+    ParticleReal& zp = p_prime.pos(2);
 
-    int vl = svcntd();
+    bool is_outside_geom = (xp < rlo[0] || xp > rhi[0] || yp < rlo[1] || yp > rhi[1] || zp < rlo[2] || zp > rhi[2]);
 
-    amrex::Real sx_m[32];
-    amrex::Real sy_m[32];
-    amrex::Real sz_m[32];
-
-    int& g_move_begin = ptile.g_move_begin;
-    std::vector<int>& g_phys_bin_offset = ptile.g_phys_bin_offset;
-    std::vector<int>& g_phys_bin_length = ptile.g_phys_bin_length;
-
-    int nomove_idx = 0;
-    int move_idx = np_to_push;
-
-    for (int l_node = 0; l_node < lenz; ++l_node)
+    if (is_outside_geom && geom.isAnyPeriodic())
     {
-        for (int k_node = 0; k_node < leny; ++k_node)
+        bool shift_success = false;
+        for (int idim = 0; idim < 3; ++idim)
         {
-            for (int j_node = 0; j_node < lenx; ++j_node)
-            {
-                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
-                int& offset = g_phys_bin_offset[old_bin];
-                int& binlength = g_phys_bin_length[old_bin];
-                MintVec oldbin_v(old_bin);
-
-                int new_binlength = 0;
-
-                for (int k = 0; k < binlength; k += vl)
-                {
-                    svbool_t p_ip = svwhilelt_b64(k, binlength);
-                    int base = offset + k;
-                    MVec xp_v = MVec::Load(p_ip, m_x + base);
-                    MVec yp_v = MVec::Load(p_ip, m_y + base);
-                    MVec zp_v = MVec::Load(p_ip, m_z + base);
-
-                    const MVec x = (xp_v - xyzmin.x) * dinv.x;
-                    const MVec y = (yp_v - xyzmin.y) * dinv.y;
-                    const MVec z = (zp_v - xyzmin.z) * dinv.z;
-
-                    Mvec_compute_shape_factor_part_sve_order3(sx_m, x, p_ip);
-                    Mvec_compute_shape_factor_part_sve_order3(sy_m, y, p_ip);
-                    Mvec_compute_shape_factor_part_sve_order3(sz_m, z, p_ip);
-
-                    MVec Exp_v(Ex_external_particle);
-                    MVec Eyp_v(Ey_external_particle);
-                    MVec Ezp_v(Ez_external_particle);
-                    MVec Bzp_v(Bz_external_particle);
-                    MVec Byp_v(By_external_particle);
-                    MVec Bxp_v(Bx_external_particle);
-                 
-                    svzero_za();
-
-                    for (int iz = 0; iz < 4; ++iz)
-                    {
-                        MVec sz_m_v = MVec::Load(p_ip, &sz_m[iz * 8]);
-                        
-                        for (int iy = 0; iy < 4; iy++)
-                        {
-                            MVec sy_m_v = MVec::Load(p_ip, &sy_m[iy * 8]);
-                            for (int ix = 0; ix < 4; ix++)
-                            {
-                                MVec sx_m_v = MVec::Load(p_ip, &sx_m[ix * 8]);
-                                MVec aos_v = MVec::Load(p_0_5, &aos_arr[6 * (old_bin + ix + iy * lenx + iz * lenx * leny)]);
-                                MVec sx_sy_sz_m_v = sx_m_v * sy_m_v * sz_m_v;
-                                
-                                svmopa_za64_m(0, p_0_5, p_ip, aos_v, sx_sy_sz_m_v);
-                            }
-                        }
-                    }
-
-                    Exp_v += svread_hor_za64_m(vzero, p_ip, 0, 0);
-                    Eyp_v += svread_hor_za64_m(vzero, p_ip, 0, 1);
-                    Ezp_v += svread_hor_za64_m(vzero, p_ip, 0, 2);
-                    Bzp_v += svread_hor_za64_m(vzero, p_ip, 0, 3);
-                    Byp_v += svread_hor_za64_m(vzero, p_ip, 0, 4);
-                    Bxp_v += svread_hor_za64_m(vzero, p_ip, 0, 5);
-
-                    MVec ux_v = MVec::Load(p_ip, ux + base);
-                    MVec uy_v = MVec::Load(p_ip, uy + base);
-                    MVec uz_v = MVec::Load(p_ip, uz + base);
-
-                    ux_v += econst * Exp_v;
-                    uy_v += econst * Eyp_v;
-                    uz_v += econst * Ezp_v;
-
-                    MVec inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
-
-                    MVec tx_v = econst * inv_gamma_v * Bxp_v;
-                    MVec ty_v = econst * inv_gamma_v * Byp_v;
-                    MVec tz_v = econst * inv_gamma_v * Bzp_v;
-
-                    MVec tsqi_v = 2. / (1. + tx_v * tx_v + ty_v * ty_v + tz_v * tz_v);
-
-                    MVec sx_v = tx_v * tsqi_v;
-                    MVec sy_v = ty_v * tsqi_v;
-                    MVec sz_v = tz_v * tsqi_v;
-
-                    MVec uxp_v = ux_v + uy_v * tz_v - uz_v * ty_v;
-                    MVec uyp_v = uy_v + uz_v * tx_v - ux_v * tz_v;
-                    MVec uzp_v = uz_v + ux_v * ty_v - uy_v * tx_v;
-
-                    ux_v += uyp_v * sz_v - uzp_v * sy_v;
-                    uy_v += uzp_v * sx_v - uxp_v * sz_v;
-                    uz_v += uxp_v * sy_v - uyp_v * sx_v;
-
-                    ux_v += econst * Exp_v;
-                    uy_v += econst * Eyp_v;
-                    uz_v += econst * Ezp_v;
-
-                    // svst1_scatter_index(p_ip, ux, ip_v, ux_v);
-                    // svst1_scatter_index(p_ip, uy, ip_v, uy_v);
-                    // svst1_scatter_index(p_ip, uz, ip_v, uz_v);                     
-
-                    inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
-
-                    xp_v += ux_v * inv_gamma_v * dt;
-                    yp_v += uy_v * inv_gamma_v * dt;
-                    zp_v += uz_v * inv_gamma_v * dt;
-                    
-                    MVec wp_v = MVec::Load(p_ip, wp + base);
-
-                    // svst1_scatter_index(p_ip, m_x, ip_v, xp_v);
-                    // svst1_scatter_index(p_ip, m_y, ip_v, yp_v);
-                    // svst1_scatter_index(p_ip, m_z, ip_v, zp_v);
-
-                    MVec x_new = (xp_v - xyzmin.x) * dinv.x;
-                    MintVec j_nodev = svcvt_s64_f64_z(p_ip, x_new) - 1;
-            
-                    MVec y_new = (yp_v - xyzmin.y) * dinv.y;
-                    MintVec k_nodev = svcvt_s64_f64_z(p_ip, y_new) - 1;
-            
-                    MVec z_new = (zp_v - xyzmin.z) * dinv.z;
-                    MintVec l_nodev = svcvt_s64_f64_z(p_ip, z_new) - 1;
-            
-                    MintVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
-                    svbool_t ip_move = svcmpne_s64(p_ip, newbin_v, oldbin_v);
-                    svbool_t ip_nomove = svnot_b_z(p_ip, ip_move);
-
-                    uint64_t nomove_num = svcntp_b64(p_ip, ip_nomove);
-                    uint64_t move_num = svcntp_b64(p_ip, ip_move);
-
-                    int particles_num = binlength - k < 8 ? binlength - k : 8;
-                    if (nomove_num == particles_num)
-                    {
-                        ux_v.Store(p_ip, ux_buffer_ptr + nomove_idx);
-                        uy_v.Store(p_ip, uy_buffer_ptr + nomove_idx);
-                        uz_v.Store(p_ip, uz_buffer_ptr + nomove_idx);
-                        xp_v.Store(p_ip, mx_buffer_ptr + nomove_idx);
-                        yp_v.Store(p_ip, my_buffer_ptr + nomove_idx);
-                        zp_v.Store(p_ip, mz_buffer_ptr + nomove_idx);
-                        wp_v.Store(p_ip, w_buffer_ptr + nomove_idx);
-
-                        nomove_idx += nomove_num;
-                    }
-                    else if(move_num == particles_num)
-                    {
-                        move_idx -= move_num;
-                        ux_v.Store(p_ip, ux_buffer_ptr + move_idx);
-                        uy_v.Store(p_ip, uy_buffer_ptr + move_idx);
-                        uz_v.Store(p_ip, uz_buffer_ptr + move_idx);
-                        xp_v.Store(p_ip, mx_buffer_ptr + move_idx);
-                        yp_v.Store(p_ip, my_buffer_ptr + move_idx);
-                        zp_v.Store(p_ip, mz_buffer_ptr + move_idx);
-                        wp_v.Store(p_ip, w_buffer_ptr + move_idx);
-                    }
-                    else
-                    {
-                        MVec ux_nomove_v = svcompact_f64(ip_nomove, ux_v);
-                        MVec uy_nomove_v = svcompact_f64(ip_nomove, uy_v);
-                        MVec uz_nomove_v = svcompact_f64(ip_nomove, uz_v);
-                        MVec xp_nomove_v = svcompact_f64(ip_nomove, xp_v);
-                        MVec yp_nomove_v = svcompact_f64(ip_nomove, yp_v);
-                        MVec zp_nomove_v = svcompact_f64(ip_nomove, zp_v);
-                        MVec wp_nomove_v = svcompact_f64(ip_nomove, wp_v);
-    
-                        MVec ux_move_v = svcompact_f64(ip_move, ux_v);
-                        MVec uy_move_v = svcompact_f64(ip_move, uy_v);
-                        MVec uz_move_v = svcompact_f64(ip_move, uz_v);
-                        MVec xp_move_v = svcompact_f64(ip_move, xp_v);
-                        MVec yp_move_v = svcompact_f64(ip_move, yp_v);
-                        MVec zp_move_v = svcompact_f64(ip_move, zp_v);
-                        MVec wp_move_v = svcompact_f64(ip_move, wp_v);
-    
-                        svbool_t p_nomove = svwhilelt_b64(0ULL, nomove_num);
-                        svbool_t p_move = svwhilelt_b64(0ULL, move_num);
-    
-                        ux_nomove_v.Store(p_nomove, ux_buffer_ptr + nomove_idx);
-                        uy_nomove_v.Store(p_nomove, uy_buffer_ptr + nomove_idx);
-                        uz_nomove_v.Store(p_nomove, uz_buffer_ptr + nomove_idx);
-                        xp_nomove_v.Store(p_nomove, mx_buffer_ptr + nomove_idx);
-                        yp_nomove_v.Store(p_nomove, my_buffer_ptr + nomove_idx);
-                        zp_nomove_v.Store(p_nomove, mz_buffer_ptr + nomove_idx);
-                        wp_nomove_v.Store(p_nomove, w_buffer_ptr + nomove_idx);
-
-                        nomove_idx += nomove_num;
-
-                        move_idx -= move_num;
-    
-                        ux_move_v.Store(p_move, ux_buffer_ptr + move_idx);
-                        uy_move_v.Store(p_move, uy_buffer_ptr + move_idx);
-                        uz_move_v.Store(p_move, uz_buffer_ptr + move_idx);
-                        xp_move_v.Store(p_move, mx_buffer_ptr + move_idx);
-                        yp_move_v.Store(p_move, my_buffer_ptr + move_idx);
-                        zp_move_v.Store(p_move, mz_buffer_ptr + move_idx);
-                        wp_move_v.Store(p_move, w_buffer_ptr + move_idx);
-                    }
-
-                    new_binlength += nomove_num;
+            if (!is_per[idim]) continue;
+            if (p_prime.pos(idim) > rhi[idim]) {
+                while (p_prime.pos(idim) > rhi[idim]) {
+                    p_prime.pos(idim) -= static_cast<ParticleReal>(phi[idim] - plo[idim]);
                 }
-
-                const vector<int>& tmp_particle = bin_to_ip[old_bin];
-                int tmp_binlength = tmp_particle.size();
-
-                // int inr_binlength = inr_bin_length[old_bin];
-                // int inr_binoffset = inr_bin_offsets[old_bin];
-
-                // for (int k = 0; k < inr_binlength; k += vl)
-                for (int k = 0; k < tmp_binlength; k += vl)
-                {
-                    svbool_t p_ip = svwhilelt_b64(k, tmp_binlength);
-                    MintVec ip_v = svld1sw_s64(p_ip, &tmp_particle[k]);
-                    // svbool_t p_ip = svwhilelt_b64(k, inr_binlength);
-                    // MintVec ip_v = svld1sw_s64(p_ip, &local_index[inr_binoffset + k]);
-
-                    MVec xp_v = svld1_gather_s64index_f64(p_ip, m_x, ip_v);
-                    MVec yp_v = svld1_gather_s64index_f64(p_ip, m_y, ip_v);
-                    MVec zp_v = svld1_gather_s64index_f64(p_ip, m_z, ip_v);
-                    const MVec x = (xp_v - xyzmin.x) * dinv.x;
-                    const MVec y = (yp_v - xyzmin.y) * dinv.y;
-                    const MVec z = (zp_v - xyzmin.z) * dinv.z;
-
-                    Mvec_compute_shape_factor_part_sve_order3(sx_m, x, p_ip);
-                    Mvec_compute_shape_factor_part_sve_order3(sy_m, y, p_ip);
-                    Mvec_compute_shape_factor_part_sve_order3(sz_m, z, p_ip);
-
-                    MVec Exp_v(Ex_external_particle);
-                    MVec Eyp_v(Ey_external_particle);
-                    MVec Ezp_v(Ez_external_particle);
-                    MVec Bzp_v(Bz_external_particle);
-                    MVec Byp_v(By_external_particle);
-                    MVec Bxp_v(Bx_external_particle);
-                 
-                    svzero_za();
-
-                    for (int iz = 0; iz < 4; ++iz)
-                    {
-                        MVec sz_m_v = MVec::Load(p_ip, &sz_m[iz * 8]);
-                        
-                        for (int iy = 0; iy < 4; iy++)
-                        {
-                            MVec sy_m_v = MVec::Load(p_ip, &sy_m[iy * 8]);
-                            for (int ix = 0; ix < 4; ix++)
-                            {
-                                MVec sx_m_v = MVec::Load(p_ip, &sx_m[ix * 8]);
-                                MVec aos_v = MVec::Load(p_0_5, &aos_arr[6 * (old_bin + ix + iy * lenx + iz * lenx * leny)]);
-                                MVec sx_sy_sz_m_v = sx_m_v * sy_m_v * sz_m_v;
-                                
-                                svmopa_za64_m(0, p_0_5, p_ip, aos_v, sx_sy_sz_m_v);
-                            }
-                        }
-                    }
-
-                    Exp_v += svread_hor_za64_m(vzero, p_ip, 0, 0);
-                    Eyp_v += svread_hor_za64_m(vzero, p_ip, 0, 1);
-                    Ezp_v += svread_hor_za64_m(vzero, p_ip, 0, 2);
-                    Bzp_v += svread_hor_za64_m(vzero, p_ip, 0, 3);
-                    Byp_v += svread_hor_za64_m(vzero, p_ip, 0, 4);
-                    Bxp_v += svread_hor_za64_m(vzero, p_ip, 0, 5);
-
-                    MVec ux_v = svld1_gather_s64index_f64(p_ip, ux, ip_v);
-                    MVec uy_v = svld1_gather_s64index_f64(p_ip, uy, ip_v);
-                    MVec uz_v = svld1_gather_s64index_f64(p_ip, uz, ip_v);
-
-                    ux_v += econst * Exp_v;
-                    uy_v += econst * Eyp_v;
-                    uz_v += econst * Ezp_v;
-
-                    MVec inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
-
-                    MVec tx_v = econst * inv_gamma_v * Bxp_v;
-                    MVec ty_v = econst * inv_gamma_v * Byp_v;
-                    MVec tz_v = econst * inv_gamma_v * Bzp_v;
-
-                    MVec tsqi_v = 2. / (1. + tx_v * tx_v + ty_v * ty_v + tz_v * tz_v);
-
-                    MVec sx_v = tx_v * tsqi_v;
-                    MVec sy_v = ty_v * tsqi_v;
-                    MVec sz_v = tz_v * tsqi_v;
-
-                    MVec uxp_v = ux_v + uy_v * tz_v - uz_v * ty_v;
-                    MVec uyp_v = uy_v + uz_v * tx_v - ux_v * tz_v;
-                    MVec uzp_v = uz_v + ux_v * ty_v - uy_v * tx_v;
-
-                    ux_v += uyp_v * sz_v - uzp_v * sy_v;
-                    uy_v += uzp_v * sx_v - uxp_v * sz_v;
-                    uz_v += uxp_v * sy_v - uyp_v * sx_v;
-
-                    ux_v += econst * Exp_v;
-                    uy_v += econst * Eyp_v;
-                    uz_v += econst * Ezp_v;
-
-                    // svst1_scatter_index(p_ip, ux, ip_v, ux_v);
-                    // svst1_scatter_index(p_ip, uy, ip_v, uy_v);
-                    // svst1_scatter_index(p_ip, uz, ip_v, uz_v);                     
-
-                    inv_gamma_v = 1. / (1. + (ux_v * ux_v + uy_v * uy_v + uz_v * uz_v) * inv_c2).Sqrt();
-
-                    xp_v += ux_v * inv_gamma_v * dt;
-                    yp_v += uy_v * inv_gamma_v * dt;
-                    zp_v += uz_v * inv_gamma_v * dt;
-                    
-                    MVec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
-
-                    // svst1_scatter_index(p_ip, m_x, ip_v, xp_v);
-                    // svst1_scatter_index(p_ip, m_y, ip_v, yp_v);
-                    // svst1_scatter_index(p_ip, m_z, ip_v, zp_v);
-
-                    MVec x_new = (xp_v - xyzmin.x) * dinv.x;
-                    MintVec j_nodev = svcvt_s64_f64_z(p_ip, x_new) - 1;
-            
-                    MVec y_new = (yp_v - xyzmin.y) * dinv.y;
-                    MintVec k_nodev = svcvt_s64_f64_z(p_ip, y_new) - 1;
-            
-                    MVec z_new = (zp_v - xyzmin.z) * dinv.z;
-                    MintVec l_nodev = svcvt_s64_f64_z(p_ip, z_new) - 1;
-            
-                    MintVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
-                    svbool_t ip_move = svcmpne_s64(p_ip, newbin_v, oldbin_v);
-                    svbool_t ip_nomove = svnot_b_z(p_ip, ip_move);
-
-                    uint64_t nomove_num = svcntp_b64(p_ip, ip_nomove);
-                    uint64_t move_num = svcntp_b64(p_ip, ip_move);
-
-                    MVec ux_nomove_v = svcompact_f64(ip_nomove, ux_v);
-                    MVec uy_nomove_v = svcompact_f64(ip_nomove, uy_v);
-                    MVec uz_nomove_v = svcompact_f64(ip_nomove, uz_v);
-                    MVec xp_nomove_v = svcompact_f64(ip_nomove, xp_v);
-                    MVec yp_nomove_v = svcompact_f64(ip_nomove, yp_v);
-                    MVec zp_nomove_v = svcompact_f64(ip_nomove, zp_v);
-                    MVec wp_nomove_v = svcompact_f64(ip_nomove, wp_v);
-
-                    MVec ux_move_v = svcompact_f64(ip_move, ux_v);
-                    MVec uy_move_v = svcompact_f64(ip_move, uy_v);
-                    MVec uz_move_v = svcompact_f64(ip_move, uz_v);
-                    MVec xp_move_v = svcompact_f64(ip_move, xp_v);
-                    MVec yp_move_v = svcompact_f64(ip_move, yp_v);
-                    MVec zp_move_v = svcompact_f64(ip_move, zp_v);
-                    MVec wp_move_v = svcompact_f64(ip_move, wp_v);
-
-                    svbool_t p_nomove = svwhilelt_b64(0ULL, nomove_num);
-                    svbool_t p_move = svwhilelt_b64(0ULL, move_num);
-
-                    ux_nomove_v.Store(p_nomove, ux_buffer_ptr + nomove_idx);
-                    uy_nomove_v.Store(p_nomove, uy_buffer_ptr + nomove_idx);
-                    uz_nomove_v.Store(p_nomove, uz_buffer_ptr + nomove_idx);
-                    xp_nomove_v.Store(p_nomove, mx_buffer_ptr + nomove_idx);
-                    yp_nomove_v.Store(p_nomove, my_buffer_ptr + nomove_idx);
-                    zp_nomove_v.Store(p_nomove, mz_buffer_ptr + nomove_idx);
-                    wp_nomove_v.Store(p_nomove, w_buffer_ptr + nomove_idx);
-
-                    nomove_idx += nomove_num;
-
-                    move_idx -= move_num;
-
-                    ux_move_v.Store(p_move, ux_buffer_ptr + move_idx);
-                    uy_move_v.Store(p_move, uy_buffer_ptr + move_idx);
-                    uz_move_v.Store(p_move, uz_buffer_ptr + move_idx);
-                    xp_move_v.Store(p_move, mx_buffer_ptr + move_idx);
-                    yp_move_v.Store(p_move, my_buffer_ptr + move_idx);
-                    zp_move_v.Store(p_move, mz_buffer_ptr + move_idx);
-                    wp_move_v.Store(p_move, w_buffer_ptr + move_idx);
-
-                    new_binlength += nomove_num;
+                if (p_prime.pos(idim) < rlo[idim]) {
+                    p_prime.pos(idim) = rlo[idim];
                 }
-
-                binlength = new_binlength;
-                offset = nomove_idx - binlength;
+                shift_success = true;
             }
+            else if (p_prime.pos(idim) < rlo[idim]) {
+                while (p_prime.pos(idim) < rlo[idim]) {
+                    p_prime.pos(idim) += static_cast<ParticleReal>(phi[idim] - plo[idim]);
+                }
+                if (p_prime.pos(idim) > rhi[idim]) {
+                    p_prime.pos(idim) = rhi[idim];
+                }
+                shift_success = true;
+            }
+        }
+
+        if (!shift_success)
+        {
+            amrex::Abort("Particle is still outside the domain after periodic shift");
+        }            
+
+        std::vector< std::pair<int,Box> > isects;
+        int grid;
+        IntVect iv;
+        const BoxArray& ba = ParticleBoxArray(lev);
+
+        iv = Index<amrex::Particle<0, 0>, DefaultAssignor>(p_prime, lev);
+        ba.intersections(Box(iv, iv), isects, true, 0);
+        grid = isects.empty() ? -1 : isects[0].first;
+
+        if (grid >= 0)
+        {
+            // 一定要再后面打包数据的时候用 p_prime 中的位置
+            // mx_buffer_ptr[ip] = p_prime.pos(0);
+            // my_buffer_ptr[ip] = p_prime.pos(1);
+            // mz_buffer_ptr[ip] = p_prime.pos(2);
+
+            const Box& bx = ba.getCellCenteredBox(grid);
+
+            pld.m_lev = lev;
+            pld.m_grid = grid;
+            pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
+            pld.m_cell = iv;
+            pld.m_gridbox = bx;
+            pld.m_grown_gridbox = bx;
+        }
+        else
+        {
+            amrex::Abort("Particle is still outside the domain after periodic shift");
+        }
+    }
+    else
+    {
+        bool indomain_success = Where(p_prime, pld, 0, 0, 0, -1);
+        if (!indomain_success)
+        {
+            amrex::Abort("Particle is still outside the domain after indomain");
         }
     }
 
-    g_move_begin = move_idx;
-    printf("np_to_push: %ld, nomove_idx: %d, move_idx: %d\n", np_to_push, nomove_idx, move_idx);
+    // 没有abort就说明成功定位
+    return true;
+
+    // 原版代码
+    // bool is_outside_geom = (xp < rlo[0] || xp > rhi[0] || yp < rlo[1] || yp > rhi[1] || zp < rlo[2] || zp > rhi[2]);
+
+    // if (is_outside_geom && geom.isAnyPeriodic())
+    // {
+    //     bool shift_success = false;
+    //     for (int idim = 0; idim < 3; ++idim)
+    //     {
+    //         if (!is_per[idim]) continue;
+    //         if (p_prime.pos(idim) > rhi[idim]) {
+    //             while (p_prime.pos(idim) > rhi[idim]) {
+    //                 p_prime.pos(idim) -= static_cast<ParticleReal>(phi[idim] - plo[idim]);
+    //             }
+    //             if (p_prime.pos(idim) < rlo[idim]) {
+    //                 p_prime.pos(idim) = rlo[idim];
+    //             }
+    //             shift_success = true;
+    //         }
+    //         else if (p_prime.pos(idim) < rlo[idim]) {
+    //             while (p_prime.pos(idim) < rlo[idim]) {
+    //                 p_prime.pos(idim) += static_cast<ParticleReal>(phi[idim] - plo[idim]);
+    //             }
+    //             if (p_prime.pos(idim) > rhi[idim]) {
+    //                 p_prime.pos(idim) = rhi[idim];
+    //             }
+    //             shift_success = true;
+    //         }
+    //     }
+
+    //     if (!shift_success)
+    //     {
+    //         amrex::Abort("Particle is still outside the domain after periodic shift");
+    //     }            
+
+    //     std::vector< std::pair<int,Box> > isects;
+    //     int grid;
+    //     IntVect iv;
+    //     const BoxArray& ba = ParticleBoxArray(lev);
+
+    //     iv = Index<amrex::Particle<0, 0>, DefaultAssignor>(p_prime, lev);
+    //     ba.intersections(Box(iv, iv), isects, true, 0);
+    //     grid = isects.empty() ? -1 : isects[0].first;
+
+    //     if (grid >= 0)
+    //     {
+    //         mx_buffer_ptr[ip] = p_prime.pos(0);
+    //         my_buffer_ptr[ip] = p_prime.pos(1);
+    //         mz_buffer_ptr[ip] = p_prime.pos(2);
+            
+    //         const Box& bx = ba.getCellCenteredBox(grid);
+            
+    //         pld.m_lev = lev;
+    //         pld.m_grid = grid;
+    //         pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
+    //         pld.m_cell = iv;
+    //         pld.m_gridbox = bx;
+    //         pld.m_grown_gridbox = bx;
+    //     }
+    //     else
+    //     {
+    //         amrex::Abort("Particle is still outside the domain after periodic shift");
+    //     }
+    // }
+    // else
+    // {
+    //     bool indomain_success = Where(p_prime, pld, 0, 0, 0, -1);
+    //     if (!indomain_success)
+    //     {
+    //         amrex::Abort("Particle is still outside the domain after indomain");
+    //     }
+
+    //     // bool indomain_success = false;
+    //     // std::vector< std::pair<int,Box> > isects;
+    //     // int grid;
+    //     // IntVect iv;
+    //     // const BoxArray& ba = ParticleBoxArray(lev);
+
+    //     // iv = Index<amrex::Particle<0, 0>, DefaultAssignor>(p_prime, lev);
+    //     // ba.intersections(Box(iv, iv), isects, true, 0);
+    //     // grid = isects.empty() ? -1 : isects[0].first;
+
+    //     // if (grid >= 0) {
+    //     //     const Box& bx = ba.getCellCenteredBox(grid);
+    //     //     pld.m_lev  = lev;
+    //     //     pld.m_grid = grid;
+    //     //     pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
+    //     //     pld.m_cell = iv;
+    //     //     pld.m_gridbox = bx;
+    //     //     pld.m_grown_gridbox = amrex::grow(bx, nGrow);
+    //     //     return true;
+    //     // }
+    //     // else
+    //     // {
+    //     //     amrex::Abort("Particle is still outside the domain after indomain");
+    //     // }
+    // }
 }
 
 void
-PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& pti,
-                                   amrex::FArrayBox const * exfab,
-                                   amrex::FArrayBox const * eyfab,
-                                   amrex::FArrayBox const * ezfab,
-                                   amrex::FArrayBox const * bxfab,
-                                   amrex::FArrayBox const * byfab,
-                                   amrex::FArrayBox const * bzfab,
-                                   const amrex::IntVect ngEB, const int /*e_is_nodal*/,
-                                   const long offset,
-                                   const long np_to_push,
-                                   int lev, int gather_lev,
-                                   amrex::Real dt, ScaleFields scaleFields,
-                                   DtType a_dt_type)
+PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
+                         amrex::IntVect ngEB,
+                         long offset,
+                         long np_to_push,
+                         int lev, int gather_lev)
 {
-    uint64_t init_area = 0;
-    uint64_t aos_area = 0;
-    uint64_t precompute_area = 0;
-    uint64_t sort_area = 0;
-    uint64_t calculate_area = 0;
-    uint64_t reduce_area = 0;
-
-    uint64_t init_start = rdtscv();
     const int thread_num = omp_get_thread_num();
 
-    WARPX_ALWAYS_ASSERT_WITH_MESSAGE((gather_lev==(lev-1)) ||
-                                     (gather_lev==(lev  )),
-                                     "Gather buffers only work for lev-1");
-
     using RType = amrex::ParticleReal;
-    using namespace amrex::literals;
-    using namespace amrex;
 
-    if (np_to_push == 0) { return; }
-    
     auto& soa = pti.GetStructOfArrays();
     RType* AMREX_RESTRICT m_x = soa.GetRealData(PIdx::x).dataPtr();
     RType* AMREX_RESTRICT m_y = soa.GetRealData(PIdx::y).dataPtr();
     RType* AMREX_RESTRICT m_z = soa.GetRealData(PIdx::z).dataPtr();
-    
+
     const amrex::XDim3 dinv = WarpX::InvCellSize(std::max(gather_lev, 0));
 
     Box box;
@@ -9052,119 +8794,18 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& p
 
     box.grow(ngEB);
 
-    const amrex::ParticleReal Ex_external_particle = m_E_external_particle[0];
-    const amrex::ParticleReal Ey_external_particle = m_E_external_particle[1];
-    const amrex::ParticleReal Ez_external_particle = m_E_external_particle[2];
-    const amrex::ParticleReal Bx_external_particle = m_B_external_particle[0];
-    const amrex::ParticleReal By_external_particle = m_B_external_particle[1];
-    const amrex::ParticleReal Bz_external_particle = m_B_external_particle[2];
-
     const amrex::XDim3 xyzmin = WarpX::LowerCorner(box, gather_lev, 0._rt);
 
-    const Dim3 len = length(box);
-    int lenx = len.x;
-    int leny = len.y;
-    int lenz = len.z;
-    int num_bin = lenx * leny * lenz;
-
-    init_area += rdtscv() - init_start;
-
-    uint64_t aos_start = rdtscv();
-     
-    int m_box_size = WarpX::GetInstance().m_box_size;
-    amrex::Real* aos_arr = WarpX::GetInstance().aos_arr + thread_num * 6 * m_box_size;
-
-    aos_area += rdtscv() - aos_start;
-
-    init_start = rdtscv();
     auto& attribs = pti.GetAttribs();
     ParticleReal* const AMREX_RESTRICT wp = attribs[PIdx::w].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
 
-    auto& mx_buffer = pti.GetAttribs(this->getParticleComps()["mx_buffer"]);
-    auto& my_buffer = pti.GetAttribs(this->getParticleComps()["my_buffer"]);
-    auto& mz_buffer = pti.GetAttribs(this->getParticleComps()["mz_buffer"]);
-    
-    auto& ux_buffer = pti.GetAttribs(this->getParticleComps()["ux_buffer"]);
-    auto& uy_buffer = pti.GetAttribs(this->getParticleComps()["uy_buffer"]);
-    auto& uz_buffer = pti.GetAttribs(this->getParticleComps()["uz_buffer"]);
-    auto& w_buffer = pti.GetAttribs(this->getParticleComps()["w_buffer"]);
-        
-    ParticleReal* const AMREX_RESTRICT mx_buffer_ptr = mx_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT my_buffer_ptr = my_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT mz_buffer_ptr = mz_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT ux_buffer_ptr = ux_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT uy_buffer_ptr = uy_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT uz_buffer_ptr = uz_buffer.dataPtr() + offset;
-    ParticleReal* const AMREX_RESTRICT w_buffer_ptr = w_buffer.dataPtr() + offset;
-
-    const amrex::ParticleReal q = this->charge;
-    const amrex::ParticleReal m = this->mass;
-
-    const amrex::ParticleReal econst = 0.5_prt * q * dt / m;
-
     int vl = svcntd();
-
-    long tmpbin[8];
 
     auto& ptile = ParticlesAt(lev, pti);
     int& g_move_begin = ptile.g_move_begin;
-
-    std::vector<std::vector<int>> bin_to_ip(num_bin);
-
-    for (long ip = g_move_begin; ip < np_to_push; ip += vl)
-    {
-        svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
-        Vec xp_v = Vec::Load(p_ip, &mx_buffer_ptr[ip]);
-        Vec yp_v = Vec::Load(p_ip, &my_buffer_ptr[ip]);
-        Vec zp_v = Vec::Load(p_ip, &mz_buffer_ptr[ip]);
-
-        Vec x = (xp_v - xyzmin.x) * dinv.x;
-        intVec j_nodev = svcvt_s64_f64_z(p_ip, x) - 1;
-        
-        Vec y = (yp_v - xyzmin.y) * dinv.y;
-        intVec k_nodev = svcvt_s64_f64_z(p_ip, y) - 1;
-        
-        Vec z = (zp_v - xyzmin.z) * dinv.z;
-        intVec l_nodev = svcvt_s64_f64_z(p_ip, z) - 1;
-        
-        intVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
-        newbin_v.Store(p_ip, tmpbin);
-        
-        int num_particles = svcntp_b64(p_ip, p_ip);
-        for (int k = 0; k < num_particles; ++k)
-        {
-            bin_to_ip[tmpbin[k]].push_back((int)(ip + k));
-        }
-    }
-
-    uint64_t calculate_start = rdtscv();
-    PushPX_sve_sme_physort_fusion_order3_kernel(
-        aos_arr, 
-        Ex_external_particle, Ey_external_particle, Ez_external_particle,
-        Bx_external_particle, By_external_particle, Bz_external_particle, 
-        wp, ux, uy, uz,
-        m_x, m_y, m_z,
-        econst, dt,
-        xyzmin, dinv,
-        lenx, leny, lenz, np_to_push,
-        ptile, bin_to_ip,
-        mx_buffer_ptr, my_buffer_ptr, mz_buffer_ptr, ux_buffer_ptr, uy_buffer_ptr, uz_buffer_ptr, w_buffer_ptr 
-    );
-    calculate_area += rdtscv() - calculate_start;
-
-    // 操作完成后进行指针交换
-    uint64_t reduce_start = rdtscv();
-    attribs[PIdx::x].swap(mx_buffer);
-    attribs[PIdx::y].swap(my_buffer);
-    attribs[PIdx::z].swap(mz_buffer);
-    attribs[PIdx::ux].swap(ux_buffer);
-    attribs[PIdx::uy].swap(uy_buffer);
-    attribs[PIdx::uz].swap(uz_buffer);
-    attribs[PIdx::w].swap(w_buffer);
-    reduce_area += rdtscv() - reduce_start;
 
     Box realbox = pti.tilebox();
     const Dim3 reallo = lbound(realbox);
@@ -9193,14 +8834,14 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& p
 
     for (long ip = g_move_begin; ip < np_to_push; ip += vl)
     {
-        // ParticleReal xp = mx_buffer_ptr[ip];
-        // ParticleReal yp = my_buffer_ptr[ip];
-        // ParticleReal zp = mz_buffer_ptr[ip];
+        // ParticleReal xp = m_x[ip];
+        // ParticleReal yp = m_y[ip];
+        // ParticleReal zp = m_z[ip];
 
         svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
-        Vec xp_v = Vec::Load(p_ip, &mx_buffer_ptr[ip]);
-        Vec yp_v = Vec::Load(p_ip, &my_buffer_ptr[ip]);
-        Vec zp_v = Vec::Load(p_ip, &mz_buffer_ptr[ip]);
+        Vec xp_v = Vec::Load(p_ip, &m_x[ip]);
+        Vec yp_v = Vec::Load(p_ip, &m_y[ip]);
+        Vec zp_v = Vec::Load(p_ip, &m_z[ip]);
 
         // int j = (int)((xp - xyzmin.x) * dinv.x) - 1;
         // int k = (int)((yp - xyzmin.y) * dinv.y) - 1;
@@ -9245,29 +8886,29 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& p
     while (tail_outside_index >= 0 && tail - outside_particles[tail_outside_index] < vl)
     {
         long ip = outside_particles[tail_outside_index];
-        ParticleReal mx_tmp = mx_buffer_ptr[ip];
-        ParticleReal my_tmp = my_buffer_ptr[ip];
-        ParticleReal mz_tmp = mz_buffer_ptr[ip];
-        ParticleReal ux_tmp = ux_buffer_ptr[ip];
-        ParticleReal uy_tmp = uy_buffer_ptr[ip];
-        ParticleReal uz_tmp = uz_buffer_ptr[ip];
-        ParticleReal w_tmp = w_buffer_ptr[ip];
+        ParticleReal m_x_tmp = m_x[ip];
+        ParticleReal m_y_tmp = m_y[ip];
+        ParticleReal m_z_tmp = m_z[ip];
+        ParticleReal ux_tmp = ux[ip];
+        ParticleReal uy_tmp = uy[ip];
+        ParticleReal uz_tmp = uz[ip];
+        ParticleReal wp_tmp = wp[ip];
         
-        mx_buffer_ptr[ip] = mx_buffer_ptr[tail];
-        my_buffer_ptr[ip] = my_buffer_ptr[tail];
-        mz_buffer_ptr[ip] = mz_buffer_ptr[tail];
-        ux_buffer_ptr[ip] = ux_buffer_ptr[tail];
-        uy_buffer_ptr[ip] = uy_buffer_ptr[tail];
-        uz_buffer_ptr[ip] = uz_buffer_ptr[tail];
-        w_buffer_ptr[ip] = w_buffer_ptr[tail];
+        m_x[ip] = m_x[tail];
+        m_y[ip] = m_y[tail];
+        m_z[ip] = m_z[tail];
+        ux[ip] = ux[tail];
+        uy[ip] = uy[tail];
+        uz[ip] = uz[tail];
+        wp[ip] = wp[tail];
 
-        mx_buffer_ptr[tail] = mx_tmp;
-        my_buffer_ptr[tail] = my_tmp;
-        mz_buffer_ptr[tail] = mz_tmp;
-        ux_buffer_ptr[tail] = ux_tmp;
-        uy_buffer_ptr[tail] = uy_tmp;
-        uz_buffer_ptr[tail] = uz_tmp;
-        w_buffer_ptr[tail] = w_tmp;
+        m_x[tail] = m_x_tmp;
+        m_y[tail] = m_y_tmp;
+        m_z[tail] = m_z_tmp;
+        ux[tail] = ux_tmp;
+        uy[tail] = uy_tmp;
+        uz[tail] = uz_tmp;
+        wp[tail] = wp_tmp;    
         tail--;
 
         tail_outside_index--;
@@ -9281,43 +8922,115 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_fusion_order3 (WarpXParIter& p
         // printf("num_outside: %ld\n", num_outside);
 
         intVec ip_v = svld1sw_s64(p_ip, outside_particles + tail_outside_index - num_outside + 1);
-        Vec mx_outside_v = svld1_gather_index(p_ip, mx_buffer_ptr, ip_v);
-        Vec my_outside_v = svld1_gather_index(p_ip, my_buffer_ptr, ip_v);
-        Vec mz_outside_v = svld1_gather_index(p_ip, mz_buffer_ptr, ip_v);
-        Vec ux_outside_v = svld1_gather_index(p_ip, ux_buffer_ptr, ip_v);
-        Vec uy_outside_v = svld1_gather_index(p_ip, uy_buffer_ptr, ip_v);
-        Vec uz_outside_v = svld1_gather_index(p_ip, uz_buffer_ptr, ip_v);
-        Vec w_outside_v = svld1_gather_index(p_ip, w_buffer_ptr, ip_v);
+        Vec m_x_outside_v = svld1_gather_index(p_ip, m_x, ip_v);
+        Vec m_y_outside_v = svld1_gather_index(p_ip, m_y, ip_v);
+        Vec m_z_outside_v = svld1_gather_index(p_ip, m_z, ip_v);
+        Vec ux_outside_v = svld1_gather_index(p_ip, ux, ip_v);
+        Vec uy_outside_v = svld1_gather_index(p_ip, uy, ip_v);
+        Vec uz_outside_v = svld1_gather_index(p_ip, uz, ip_v);
+        Vec wp_outside_v = svld1_gather_index(p_ip, wp, ip_v);
         
-        Vec mx_inside_v = Vec::Load(p_ip, mx_buffer_ptr + tail - num_outside + 1);
-        Vec my_inside_v = Vec::Load(p_ip, my_buffer_ptr + tail - num_outside + 1);
-        Vec mz_inside_v = Vec::Load(p_ip, mz_buffer_ptr + tail - num_outside + 1);
-        Vec ux_inside_v = Vec::Load(p_ip, ux_buffer_ptr + tail - num_outside + 1);
-        Vec uy_inside_v = Vec::Load(p_ip, uy_buffer_ptr + tail - num_outside + 1);
-        Vec uz_inside_v = Vec::Load(p_ip, uz_buffer_ptr + tail - num_outside + 1);
-        Vec w_inside_v = Vec::Load(p_ip, w_buffer_ptr + tail - num_outside + 1);
+        Vec m_x_inside_v = Vec::Load(p_ip, m_x + tail - num_outside + 1);
+        Vec m_y_inside_v = Vec::Load(p_ip, m_y + tail - num_outside + 1);
+        Vec m_z_inside_v = Vec::Load(p_ip, m_z + tail - num_outside + 1);
+        Vec ux_inside_v = Vec::Load(p_ip, ux + tail - num_outside + 1);
+        Vec uy_inside_v = Vec::Load(p_ip, uy + tail - num_outside + 1);
+        Vec uz_inside_v = Vec::Load(p_ip, uz + tail - num_outside + 1);
+        Vec wp_inside_v = Vec::Load(p_ip, wp + tail - num_outside + 1);
 
-        mx_outside_v.Store(p_ip, mx_buffer_ptr + tail - num_outside + 1);
-        my_outside_v.Store(p_ip, my_buffer_ptr + tail - num_outside + 1);
-        mz_outside_v.Store(p_ip, mz_buffer_ptr + tail - num_outside + 1);
-        ux_outside_v.Store(p_ip, ux_buffer_ptr + tail - num_outside + 1);
-        uy_outside_v.Store(p_ip, uy_buffer_ptr + tail - num_outside + 1);
-        uz_outside_v.Store(p_ip, uz_buffer_ptr + tail - num_outside + 1);
-        w_outside_v.Store(p_ip, w_buffer_ptr + tail - num_outside + 1);
+        m_x_outside_v.Store(p_ip, m_x + tail - num_outside + 1);
+        m_y_outside_v.Store(p_ip, m_y + tail - num_outside + 1);
+        m_z_outside_v.Store(p_ip, m_z + tail - num_outside + 1);
+        ux_outside_v.Store(p_ip, ux + tail - num_outside + 1);
+        uy_outside_v.Store(p_ip, uy + tail - num_outside + 1);
+        uz_outside_v.Store(p_ip, uz + tail - num_outside + 1);
+        wp_outside_v.Store(p_ip, wp + tail - num_outside + 1);
 
         tail -= num_outside;
-        svst1_scatter_index(p_ip, mx_buffer_ptr, ip_v, mx_inside_v);
-        svst1_scatter_index(p_ip, my_buffer_ptr, ip_v, my_inside_v);
-        svst1_scatter_index(p_ip, mz_buffer_ptr, ip_v, mz_inside_v);
-        svst1_scatter_index(p_ip, ux_buffer_ptr, ip_v, ux_inside_v);
-        svst1_scatter_index(p_ip, uy_buffer_ptr, ip_v, uy_inside_v);
-        svst1_scatter_index(p_ip, uz_buffer_ptr, ip_v, uz_inside_v);
-        svst1_scatter_index(p_ip, w_buffer_ptr, ip_v, w_inside_v);
+        svst1_scatter_index(p_ip, m_x, ip_v, m_x_inside_v);
+        svst1_scatter_index(p_ip, m_y, ip_v, m_y_inside_v);
+        svst1_scatter_index(p_ip, m_z, ip_v, m_z_inside_v);
+        svst1_scatter_index(p_ip, ux, ip_v, ux_inside_v);
+        svst1_scatter_index(p_ip, uy, ip_v, uy_inside_v);
+        svst1_scatter_index(p_ip, uz, ip_v, uz_inside_v);
+        svst1_scatter_index(p_ip, wp, ip_v, wp_inside_v);
 
         tail_outside_index -= num_outside;
     }
 
-    ptile.g_new_particles_begin = tail + 1;
+    int& g_new_particles_begin = ptile.g_new_particles_begin;
+    g_new_particles_begin = tail + 1;
+
+    printf("np_to_push: %ld, g_new_particles_begin: %d\n", np_to_push, g_new_particles_begin);
+
+    const int MyProc = ParallelContext::MyProcSub();
+    const auto local_index = pti.GetPairIndex();
+    const int local_grid = local_index.first;
+    const int local_tile = local_index.second;
+
+    const int superparticle_size = WarpX::GetInstance().superparticle_size;
+    std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = WarpX::GetInstance().remote_send_allcomps;   // 维度：[thread_id, who]: realdata，每7个一组
+
+    for (long ip = g_new_particles_begin; ip < np_to_push; ip++)
+    {
+        ParticleLocData pld;
+
+        Particle<0, 0> p_prime;
+        p_prime.pos(0) = m_x[ip];
+        p_prime.pos(1) = m_y[ip];
+        p_prime.pos(2) = m_z[ip];
+
+        ParticleReal& xp = p_prime.pos(0);
+        ParticleReal& yp = p_prime.pos(1);
+        ParticleReal& zp = p_prime.pos(2);
+
+        my_locateParticle(pti, pld, p_prime, lev);
+
+        const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
+        if (who == MyProc)
+        {
+            // 同一个进程内的数据，直接获得ptile，然后打包进接收区即可
+            DefineAndReturnParticleTile(lev, pld.m_grid, pld.m_tile);       // 检查tile是否存在，若不存在，则创建（本测例应该不会出现这种情况）
+            auto& local_recv_ptile = ParticlesAt(lev, pld.m_grid, pld.m_tile);
+            std::vector<uint64_t>& local_recv_idcpu = local_recv_ptile.local_recv_idcpu[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_realdata = local_recv_ptile.local_recv_realdata[thread_num];
+            local_recv_idcpu.push_back(soa.GetIdCPUData()[ip]);
+            // 要把 p_prime 中的位置打包进去
+            local_recv_realdata.push_back(xp);
+            local_recv_realdata.push_back(yp);
+            local_recv_realdata.push_back(zp);
+            local_recv_realdata.push_back(ux[ip]);
+            local_recv_realdata.push_back(uy[ip]);
+            local_recv_realdata.push_back(uz[ip]);
+            local_recv_realdata.push_back(wp[ip]);
+        }
+        else
+        {
+            auto& particles_to_send = remote_send_allcomps[who][thread_num];
+            auto old_size = particles_to_send.size();
+            auto new_size = old_size + superparticle_size;
+            particles_to_send.resize(new_size);
+            
+            char* dst = &particles_to_send[old_size];
+            
+            std::memcpy(dst, &soa.GetIdCPUData()[ip], sizeof(uint64_t));
+            dst += sizeof(uint64_t);
+            std::memcpy(dst, &xp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &yp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &zp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &ux[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &uy[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &uz[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &wp[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+        }
+    }
 }
 
 /* \brief Perform the implicit particle push operation in one fused kernel
