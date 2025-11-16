@@ -357,6 +357,15 @@ public:
     amrex::Real *aos_arr;
     int *int_buffer;
 
+    // 在 WarpX.H 中 (360-366 行)，修改为：
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mx_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_my_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mz_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_ux_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uy_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uz_buffer_arr;
+    std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_w_buffer_arr;
+
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;
     //! Specifies the type of grid used for the above sorting, i.e. cell-centered, nodal, or mixed

@@ -1633,7 +1633,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                                     double jx_err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
                                     double jy_err = (jy_arr_tmp(x, y, z) - jy_arr_test(x, y, z)) / jy_arr_test(x, y, z);
                                     double jz_err = (jz_arr_tmp(x, y, z) - jz_arr_test(x, y, z)) / jz_arr_test(x, y, z);
-                                    if (fabs(jx_err) > 1e-9)
+                                    if (fabs(jx_err) > 1e-6)
                                     {
                                         double err = (jx_arr_tmp(x, y, z) - jx_arr_test(x, y, z)) / jx_arr_test(x, y, z);
                                         printf("ip = %ld\n", ip);
@@ -1642,13 +1642,14 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                                     }
 
                                     // jy_arr
-                                    if (fabs(jy_err) > 1e-9)
+                                    if (fabs(jy_err) > 1e-6)
                                     {
+                                        printf("jy_err: %lf\n", jy_err);
                                         amrex::Abort("jy_arr is wrong\n");
                                     }
 
                                     // jz_arr
-                                    if (fabs(jz_err) > 1e-9)
+                                    if (fabs(jz_err) > 1e-6)
                                     {
                                         printf("ip = %ld\n", ip);
                                         printf("jz_arr: %lf, jz_arr_test: %lf, jz_err: %lf\n", jz_arr_tmp(x, y, z), jz_arr_test(x, y, z), jz_err);

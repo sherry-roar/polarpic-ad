@@ -523,6 +523,25 @@ WarpX::InitTempVectors()
     int max_threads = omp_get_max_threads();
     aos_arr = (amrex::Real*)malloc(max_threads * 6 * m_box_size * sizeof(amrex::Real));
     int_buffer = (int*)malloc(max_threads * m_init_np * sizeof(int));
+
+#if defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+    thread_private_mx_buffer_arr.resize(max_threads);
+    thread_private_my_buffer_arr.resize(max_threads);
+    thread_private_mz_buffer_arr.resize(max_threads);
+    thread_private_ux_buffer_arr.resize(max_threads);
+    thread_private_uy_buffer_arr.resize(max_threads);
+    thread_private_uz_buffer_arr.resize(max_threads);
+    thread_private_w_buffer_arr.resize(max_threads);
+    for (int i = 0; i < max_threads; ++i) {
+        thread_private_mx_buffer_arr[i].resize(m_init_np);
+        thread_private_my_buffer_arr[i].resize(m_init_np);
+        thread_private_mz_buffer_arr[i].resize(m_init_np);
+        thread_private_ux_buffer_arr[i].resize(m_init_np);
+        thread_private_uy_buffer_arr[i].resize(m_init_np);
+        thread_private_uz_buffer_arr[i].resize(m_init_np);
+        thread_private_w_buffer_arr[i].resize(m_init_np);
+    }
+#endif
 }
 
 void

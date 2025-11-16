@@ -401,7 +401,7 @@ public:
                          amrex::ParticleReal *uz_p_test,
                          DtType a_dt_type=DtType::Full);
 
-    virtual void PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
+    virtual void PushPX_sve_physort_order3 (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,
                          amrex::FArrayBox const * eyfab,
                          amrex::FArrayBox const * ezfab,
@@ -415,7 +415,7 @@ public:
                          amrex::Real dt, ScaleFields scaleFields,
                          DtType a_dt_type=DtType::Full);
 
-    virtual void PushPX_sve_physort_order3 (WarpXParIter& pti,
+    virtual void PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,
                          amrex::FArrayBox const * eyfab,
                          amrex::FArrayBox const * ezfab,

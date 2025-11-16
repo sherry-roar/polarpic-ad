@@ -1089,16 +1089,6 @@ PhysicalParticleContainer::PhysicalParticleContainer (AmrCore* amr_core, int isp
         utils::parser::getWithParser(pp_species_boundary,"u_th",boundary_uth);
         m_boundary_conditions.SetThermalVelocity(boundary_uth);
     }
-
-#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
-    AddRealComp("w_buffer");
-    AddRealComp("ux_buffer");
-    AddRealComp("uy_buffer");
-    AddRealComp("uz_buffer");
-    AddRealComp("mx_buffer");
-    AddRealComp("my_buffer");
-    AddRealComp("mz_buffer");
-#endif
 }
 
 PhysicalParticleContainer::PhysicalParticleContainer (AmrCore* amr_core)
@@ -7499,14 +7489,20 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
     ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
 
-    auto& mx_buffer = pti.GetAttribs(this->getParticleComps()["mx_buffer"]);
-    auto& my_buffer = pti.GetAttribs(this->getParticleComps()["my_buffer"]);
-    auto& mz_buffer = pti.GetAttribs(this->getParticleComps()["mz_buffer"]);
-    
-    auto& ux_buffer = pti.GetAttribs(this->getParticleComps()["ux_buffer"]);
-    auto& uy_buffer = pti.GetAttribs(this->getParticleComps()["uy_buffer"]);
-    auto& uz_buffer = pti.GetAttribs(this->getParticleComps()["uz_buffer"]);
-    auto& w_buffer = pti.GetAttribs(this->getParticleComps()["w_buffer"]);
+    auto& mx_buffer = WarpX::GetInstance().thread_private_mx_buffer_arr[thread_num];
+    auto& my_buffer = WarpX::GetInstance().thread_private_my_buffer_arr[thread_num];
+    auto& mz_buffer = WarpX::GetInstance().thread_private_mz_buffer_arr[thread_num];
+    auto& ux_buffer = WarpX::GetInstance().thread_private_ux_buffer_arr[thread_num];
+    auto& uy_buffer = WarpX::GetInstance().thread_private_uy_buffer_arr[thread_num];
+    auto& uz_buffer = WarpX::GetInstance().thread_private_uz_buffer_arr[thread_num];
+    auto& w_buffer = WarpX::GetInstance().thread_private_w_buffer_arr[thread_num];
+    mx_buffer.resize(np_to_push);
+    my_buffer.resize(np_to_push);
+    mz_buffer.resize(np_to_push);
+    ux_buffer.resize(np_to_push);
+    uy_buffer.resize(np_to_push);
+    uz_buffer.resize(np_to_push);
+    w_buffer.resize(np_to_push);
         
     ParticleReal* const AMREX_RESTRICT mx_buffer_ptr = mx_buffer.dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT my_buffer_ptr = my_buffer.dataPtr() + offset;
@@ -8395,7 +8391,6 @@ __arm_new("za") inline void PushPX_sve_sme_physort_order3_kernel(
     }
 
     g_move_begin = move_idx;
-    printf("Fuck\n");
     printf("np_to_push: %ld, nomove_idx: %d, move_idx: %d\n", np_to_push, nomove_idx, move_idx);
 }
 
@@ -8482,14 +8477,20 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
     ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
 
-    auto& mx_buffer = pti.GetAttribs(this->getParticleComps()["mx_buffer"]);
-    auto& my_buffer = pti.GetAttribs(this->getParticleComps()["my_buffer"]);
-    auto& mz_buffer = pti.GetAttribs(this->getParticleComps()["mz_buffer"]);
-    
-    auto& ux_buffer = pti.GetAttribs(this->getParticleComps()["ux_buffer"]);
-    auto& uy_buffer = pti.GetAttribs(this->getParticleComps()["uy_buffer"]);
-    auto& uz_buffer = pti.GetAttribs(this->getParticleComps()["uz_buffer"]);
-    auto& w_buffer = pti.GetAttribs(this->getParticleComps()["w_buffer"]);
+    auto& mx_buffer = WarpX::GetInstance().thread_private_mx_buffer_arr[thread_num];
+    auto& my_buffer = WarpX::GetInstance().thread_private_my_buffer_arr[thread_num];
+    auto& mz_buffer = WarpX::GetInstance().thread_private_mz_buffer_arr[thread_num];
+    auto& ux_buffer = WarpX::GetInstance().thread_private_ux_buffer_arr[thread_num];
+    auto& uy_buffer = WarpX::GetInstance().thread_private_uy_buffer_arr[thread_num];
+    auto& uz_buffer = WarpX::GetInstance().thread_private_uz_buffer_arr[thread_num];
+    auto& w_buffer = WarpX::GetInstance().thread_private_w_buffer_arr[thread_num];
+    mx_buffer.resize(np_to_push);
+    my_buffer.resize(np_to_push);
+    mz_buffer.resize(np_to_push);
+    ux_buffer.resize(np_to_push);
+    uy_buffer.resize(np_to_push);
+    uz_buffer.resize(np_to_push);
+    w_buffer.resize(np_to_push);
         
     ParticleReal* const AMREX_RESTRICT mx_buffer_ptr = mx_buffer.dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT my_buffer_ptr = my_buffer.dataPtr() + offset;
