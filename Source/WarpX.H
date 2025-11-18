@@ -357,7 +357,6 @@ public:
     amrex::Real *aos_arr;
     int *int_buffer;
 
-    // 在 WarpX.H 中 (360-366 行)，修改为：
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mx_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_my_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mz_buffer_arr;
@@ -366,8 +365,25 @@ public:
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uz_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_w_buffer_arr;
 
+    mutable std::unique_ptr<amrex::iMultiFab> redistribute_mask_ptr;
+    mutable int redistribute_mask_nghost = std::numeric_limits<int>::min();
+    mutable amrex::Vector<int> neighbor_procs;
+
+    // 进程间通信数据结构
     const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
     std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
+
+    std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, 初始化为0; 维护发送和接收的字节数，非向上取整
+
+    std::vector<int> RcvProc;
+    std::vector<std::size_t> rOffset; // Offset (in bytes) in the receive buffer
+
+    // std::size_t TotRcvInts;     // 维护偏移量，做了向上取整
+    std::size_t TotRcvBytes;    // 维护接收到的总字节数，但是没做向上取整
+
+    // Vector<MPI_Status>  stats;     // size: nrcvs
+    amrex::Vector<MPI_Request> rreqs;        // size: nrcvs
+    amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.
 
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;

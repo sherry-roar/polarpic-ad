@@ -440,6 +440,16 @@ public:
                          long np_to_push,
                          int lev, int gather_lev);
 
+    virtual void my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(int lev, int nghost);
+
+    virtual void fusion_Isend_and_Irecv();
+
+    virtual void fusion_local_collect(int lev);
+
+    virtual void fusion_remote_collect(int lev);
+
+    virtual void fusion_test(int lev);
+
     void ImplicitPushXP (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,
                          amrex::FArrayBox const * eyfab,
