@@ -113,6 +113,12 @@ public:
                  amrex::Real t, amrex::Real dt, DtType a_dt_type=DtType::Full, bool skip_deposition=false,
                  PushType push_type=PushType::Explicit);
 
+    void fusion_local_collect(int lev);
+
+    void fusion_remote_collect(int lev);
+
+    void fusion_test(int lev);
+
     /**
     * \brief This pushes the particle positions by one time step for all the species in the
     * MultiParticleContainer.

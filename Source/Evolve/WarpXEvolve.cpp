@@ -492,6 +492,13 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
     mypc->ApplyBoundaryConditions();
     m_particle_boundary_buffer->gatherParticlesFromDomainBoundaries(*mypc);
 
+#ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+    if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
+    printf("[WarpX::HandleParticlesAtBoundaries] call fusion_local_collect\n");
+    mypc->fusion_local_collect(finest_level);
+    printf("[WarpX::HandleParticlesAtBoundaries] call fusion_remote_collect\n");
+    mypc->fusion_remote_collect(finest_level);
+#else
     // Non-Maxwell solver: particles can move by an arbitrary number of cells
     if( electromagnetic_solver_id == ElectromagneticSolverAlgo::None ||
         electromagnetic_solver_id == ElectromagneticSolverAlgo::HybridPIC )
@@ -517,6 +524,12 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
             mypc->Redistribute();
         }
     }
+#endif
+
+#ifdef FUSION_TEST
+    printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
+    mypc->fusion_test(finest_level);
+#endif
 
     // interact the particles with EB walls (if present)
 #ifdef AMREX_USE_EB

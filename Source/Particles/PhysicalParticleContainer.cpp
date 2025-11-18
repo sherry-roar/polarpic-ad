@@ -2997,7 +2997,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
                 std::memcpy(&w, pbuf, sizeof(ParticleReal));
                 pbuf += sizeof(ParticleReal);
 
-// #ifdef FUSION_TEST
+#ifdef FUSION_TEST
                 // 然后传入 ptile 中
                 ptile.remote_recv_idcpu_test.push_back(idcpudata);
                 ptile.remote_recv_xp_test.push_back(xp);
@@ -3007,7 +3007,24 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
                 ptile.remote_recv_uy_test.push_back(uy);
                 ptile.remote_recv_uz_test.push_back(uz);
                 ptile.remote_recv_w_test.push_back(w);
-// #endif  FUSION_TEST
+#endif  FUSION_TEST
+                auto& soa = ptile.GetStructOfArrays();
+                auto& iddata = soa.GetIdCPUData();
+                auto& soa_m_x = soa.GetRealData(PIdx::x);
+                auto& soa_m_y = soa.GetRealData(PIdx::y);
+                auto& soa_m_z = soa.GetRealData(PIdx::z);
+                auto& soa_ux = soa.GetRealData(PIdx::ux);
+                auto& soa_uy = soa.GetRealData(PIdx::uy);
+                auto& soa_uz = soa.GetRealData(PIdx::uz);
+                auto& soa_wp = soa.GetRealData(PIdx::w);
+                iddata.push_back(idcpudata);
+                soa_m_x.push_back(xp);
+                soa_m_y.push_back(yp);
+                soa_m_z.push_back(zp);
+                soa_ux.push_back(ux);
+                soa_uy.push_back(uy);
+                soa_uz.push_back(uz);
+                soa_wp.push_back(w);
 
                 ++ipart;
             }
@@ -3025,6 +3042,24 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
     {
         auto& ptile = ParticlesAt(lev, pti);
         int max_threads = omp_get_max_threads();
+        auto& soa = pti.GetStructOfArrays();
+        auto& iddata = soa.GetIdCPUData();
+        auto& m_x = soa.GetRealData(PIdx::x);
+        auto& m_y = soa.GetRealData(PIdx::y);
+        auto& m_z = soa.GetRealData(PIdx::z);
+        auto& ux = soa.GetRealData(PIdx::ux);
+        auto& uy = soa.GetRealData(PIdx::uy);
+        auto& uz = soa.GetRealData(PIdx::uz);
+        auto& w = soa.GetRealData(PIdx::w);
+
+        iddata.erase(iddata.begin() + ptile.g_new_particles_begin, iddata.end());
+        m_x.erase(m_x.begin() + ptile.g_new_particles_begin, m_x.end());
+        m_y.erase(m_y.begin() + ptile.g_new_particles_begin, m_y.end());
+        m_z.erase(m_z.begin() + ptile.g_new_particles_begin, m_z.end());
+        ux.erase(ux.begin() + ptile.g_new_particles_begin, ux.end());
+        uy.erase(uy.begin() + ptile.g_new_particles_begin, uy.end());
+        uz.erase(uz.begin() + ptile.g_new_particles_begin, uz.end());
+        w.erase(w.begin() + ptile.g_new_particles_begin, w.end());
 
         for (int i = 0; i < max_threads; ++i)
         {
@@ -3037,7 +3072,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
             std::vector<amrex::ParticleReal>& local_recv_uz = ptile.local_recv_uz[i];
             std::vector<amrex::ParticleReal>& local_recv_w = ptile.local_recv_w[i];
 
-// #ifdef FUSION_TEST
+#ifdef FUSION_TEST
             ptile.local_recv_idcpu_test.insert(ptile.local_recv_idcpu_test.end(), local_recv_idcpu.begin(), local_recv_idcpu.end());
             ptile.local_recv_xp_test.insert(ptile.local_recv_xp_test.end(), local_recv_xp.begin(), local_recv_xp.end());
             ptile.local_recv_yp_test.insert(ptile.local_recv_yp_test.end(), local_recv_yp.begin(), local_recv_yp.end());
@@ -3046,7 +3081,15 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
             ptile.local_recv_uy_test.insert(ptile.local_recv_uy_test.end(), local_recv_uy.begin(), local_recv_uy.end());
             ptile.local_recv_uz_test.insert(ptile.local_recv_uz_test.end(), local_recv_uz.begin(), local_recv_uz.end());
             ptile.local_recv_w_test.insert(ptile.local_recv_w_test.end(), local_recv_w.begin(), local_recv_w.end());
-// #endif
+#endif  // FUSION_TEST
+            iddata.insert(iddata.end(), local_recv_idcpu.data(), local_recv_idcpu.data() + local_recv_idcpu.size());
+            m_x.insert(m_x.end(), local_recv_xp.data(), local_recv_xp.data() + local_recv_xp.size());
+            m_y.insert(m_y.end(), local_recv_yp.data(), local_recv_yp.data() + local_recv_yp.size());
+            m_z.insert(m_z.end(), local_recv_zp.data(), local_recv_zp.data() + local_recv_zp.size());
+            ux.insert(ux.end(), local_recv_ux.data(), local_recv_ux.data() + local_recv_ux.size());
+            uy.insert(uy.end(), local_recv_uy.data(), local_recv_uy.data() + local_recv_uy.size());
+            uz.insert(uz.end(), local_recv_uz.data(), local_recv_uz.data() + local_recv_uz.size());
+            w.insert(w.end(), local_recv_w.data(), local_recv_w.data() + local_recv_w.size());
 
             // 搬运完数据后清空
             local_recv_idcpu.clear();
@@ -3064,6 +3107,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
 void
 PhysicalParticleContainer::fusion_test(int lev)
 {
+#ifdef FUSION_TEST
     for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
     {
         auto& ptile = ParticlesAt(lev, pti);
@@ -3300,6 +3344,7 @@ PhysicalParticleContainer::fusion_test(int lev)
             amrex::Abort("g_new_particles_begin + recv_remote_size + recv_local_size != np");
         }
     }
+#endif  // FUSION_TEST
 }
 
 void
@@ -3340,10 +3385,6 @@ PhysicalParticleContainer::Evolve (int lev,
             }
         }
     }
-
-// #ifdef FUSION_TEST
-    fusion_test(lev);
-// #endif  // FUSION_TEST
 
     constexpr int local = 1;    // TODO: move out
     my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
@@ -3829,9 +3870,7 @@ PhysicalParticleContainer::Evolve (int lev,
     }
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
-    fusion_local_collect(lev);
     fusion_Isend_and_Irecv();
-    fusion_remote_collect(lev);
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 }
 

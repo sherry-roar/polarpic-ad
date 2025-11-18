@@ -668,6 +668,36 @@ MultiParticleContainer::ApplyBoundaryConditions ()
     }
 }
 
+void
+MultiParticleContainer::fusion_local_collect(int lev)
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_local_collect(lev);
+        }
+    }
+}
+
+void
+MultiParticleContainer::fusion_remote_collect(int lev)
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_remote_collect(lev);
+        }
+    }
+}
+
+void
+MultiParticleContainer::fusion_test(int lev)
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_test(lev);
+        }
+    }
+}
+
 Vector<Long>
 MultiParticleContainer::GetZeroParticlesInGrid (const int lev) const
 {
