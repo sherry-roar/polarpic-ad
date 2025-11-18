@@ -8580,7 +8580,7 @@ bool
 PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
                                    ParticleLocData& pld,
                                    Particle<0, 0>& p_prime,
-                                   int lev)
+                                   int lev, int local_grid)
 {
     const Geometry& geom = Geom(0);
     const auto plo = geom.ProbLoArray();      // Real 类型：[x_lo, y_lo, z_lo]
@@ -8658,7 +8658,44 @@ PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
     }
     else
     {
-        bool indomain_success = Where(p_prime, pld, 0, 0, 0, -1);
+        // bool indomain_success = Where(p_prime, pld, 0, 0, 0, -1);
+        // if (!indomain_success)
+        // {
+        //     amrex::Abort("Particle is still outside the domain after indomain");
+        // }
+        bool indomain_success = false;
+
+        std::vector< std::pair<int,Box> > isects;
+        const IntVect& iv = Index(p_prime, lev);
+
+        int grid;
+        const BoxArray& ba = ParticleBoxArray(lev);
+
+        if (local_grid < 0) {
+            amrex::Abort("local_grid < 0");
+        }
+        else
+        {
+            printf("[my_locateParticle] local_grid: %d\n", local_grid);
+            std::unique_ptr<iMultiFab>& redistribute_mask_ptr = WarpX::GetInstance().redistribute_mask_ptr;
+            grid = (*redistribute_mask_ptr)[local_grid](iv, 0);
+        }
+
+        if (grid >= 0) {
+            const Box& bx = ba.getCellCenteredBox(grid);
+            pld.m_lev  = lev;
+            pld.m_grid = grid;
+            pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
+            pld.m_cell = iv;
+            pld.m_gridbox = bx;
+            pld.m_grown_gridbox = amrex::grow(bx, 0);
+            indomain_success = true;
+        }
+        else
+        {
+            amrex::Abort("Particle is still outside the domain after indomain");
+        }
+
         if (!indomain_success)
         {
             amrex::Abort("Particle is still outside the domain after indomain");
@@ -8984,7 +9021,7 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
         ParticleReal& yp = p_prime.pos(1);
         ParticleReal& zp = p_prime.pos(2);
 
-        my_locateParticle(pti, pld, p_prime, lev);
+        my_locateParticle(pti, pld, p_prime, lev, local_grid);
 
         const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
         if (who == MyProc)
