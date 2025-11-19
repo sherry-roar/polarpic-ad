@@ -356,6 +356,7 @@ public:
     int m_init_np = 8 * 8 * 8 * 8 * 8 * 8 + 2048;
     amrex::Real *aos_arr;
     int *int_buffer;
+    bool is_last_step = false;
 
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mx_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_my_buffer_arr;

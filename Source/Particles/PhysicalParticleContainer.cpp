@@ -3386,9 +3386,11 @@ PhysicalParticleContainer::Evolve (int lev,
         }
     }
 
+    const bool is_last_step = WarpX::GetInstance().is_last_step;
+    if (!is_last_step) {
     constexpr int local = 1;    // TODO: move out
     my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
-
+    }
 #ifdef AMREX_USE_OMP
 #pragma omp parallel
 #endif
@@ -3678,7 +3680,9 @@ PhysicalParticleContainer::Evolve (int lev,
                             Ex.nGrowVect(), e_is_nodal,
                             0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
                             a_dt_type);
+                    if (!is_last_step) {
                     fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
+                    }
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
 #ifdef PUSH_TEST_ORDER3
@@ -3870,7 +3874,9 @@ PhysicalParticleContainer::Evolve (int lev,
     }
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+    if (!is_last_step) {
     fusion_Isend_and_Irecv();
+    }
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 }
 
