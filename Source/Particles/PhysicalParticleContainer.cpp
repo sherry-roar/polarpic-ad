@@ -2818,18 +2818,18 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
                                                 ParallelContext::CommunicatorSub()).req();
         }
 
-            // Send.
-            for (int i = 0; i < num_rcvs; ++i) {
-                const int Who = neighbor_procs[i];
-                const Long Cnt = 1;
+        // Send.
+        for (int i = 0; i < num_rcvs; ++i) {
+            const int Who = neighbor_procs[i];
+            const Long Cnt = 1;
 
-                ParallelDescriptor::Send(&Snds[Who], Cnt, Who, SeqNum,
-                                    ParallelContext::CommunicatorSub());
-            }
+            ParallelDescriptor::Send(&Snds[Who], Cnt, Who, SeqNum,
+                                ParallelContext::CommunicatorSub());
+        }
 
-            if (num_rcvs > 0) {
-                ParallelDescriptor::Waitall(rreqs, stats);
-            }
+        if (num_rcvs > 0) {
+            ParallelDescriptor::Waitall(rreqs, stats);
+        }
     }
 
     const int SeqNum = ParallelDescriptor::SeqNum();        // 全局唯一的 MPI 消息序列号
@@ -3007,7 +3007,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
                 ptile.remote_recv_uy_test.push_back(uy);
                 ptile.remote_recv_uz_test.push_back(uz);
                 ptile.remote_recv_w_test.push_back(w);
-#endif  FUSION_TEST
+#else
                 auto& soa = ptile.GetStructOfArrays();
                 auto& iddata = soa.GetIdCPUData();
                 auto& soa_m_x = soa.GetRealData(PIdx::x);
@@ -3025,6 +3025,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
                 soa_uy.push_back(uy);
                 soa_uz.push_back(uz);
                 soa_wp.push_back(w);
+#endif // FUSION_TEST
 
                 ++ipart;
             }
@@ -3034,6 +3035,10 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     }
 }
 
+/*
+ * 本地收集必须在远程收集之前，因为本地收集负责清空粒子数据
+ * 在 Test 模式中，不需要清空粒子数据，因为不需要进行粒子重排
+ */
 void
 PhysicalParticleContainer::fusion_local_collect(int lev)
 {
@@ -3052,6 +3057,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
         auto& uz = soa.GetRealData(PIdx::uz);
         auto& w = soa.GetRealData(PIdx::w);
 
+#ifndef FUSION_TEST // 在 Test 模式中，不需要清空真实粒子数据
         iddata.erase(iddata.begin() + ptile.g_new_particles_begin, iddata.end());
         m_x.erase(m_x.begin() + ptile.g_new_particles_begin, m_x.end());
         m_y.erase(m_y.begin() + ptile.g_new_particles_begin, m_y.end());
@@ -3060,6 +3066,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
         uy.erase(uy.begin() + ptile.g_new_particles_begin, uy.end());
         uz.erase(uz.begin() + ptile.g_new_particles_begin, uz.end());
         w.erase(w.begin() + ptile.g_new_particles_begin, w.end());
+#endif
 
         for (int i = 0; i < max_threads; ++i)
         {
@@ -3081,7 +3088,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
             ptile.local_recv_uy_test.insert(ptile.local_recv_uy_test.end(), local_recv_uy.begin(), local_recv_uy.end());
             ptile.local_recv_uz_test.insert(ptile.local_recv_uz_test.end(), local_recv_uz.begin(), local_recv_uz.end());
             ptile.local_recv_w_test.insert(ptile.local_recv_w_test.end(), local_recv_w.begin(), local_recv_w.end());
-#endif  // FUSION_TEST
+#else
             iddata.insert(iddata.end(), local_recv_idcpu.data(), local_recv_idcpu.data() + local_recv_idcpu.size());
             m_x.insert(m_x.end(), local_recv_xp.data(), local_recv_xp.data() + local_recv_xp.size());
             m_y.insert(m_y.end(), local_recv_yp.data(), local_recv_yp.data() + local_recv_yp.size());
@@ -3090,7 +3097,7 @@ PhysicalParticleContainer::fusion_local_collect(int lev)
             uy.insert(uy.end(), local_recv_uy.data(), local_recv_uy.data() + local_recv_uy.size());
             uz.insert(uz.end(), local_recv_uz.data(), local_recv_uz.data() + local_recv_uz.size());
             w.insert(w.end(), local_recv_w.data(), local_recv_w.data() + local_recv_w.size());
-
+#endif // FUSION_TEST
             // 搬运完数据后清空
             local_recv_idcpu.clear();
             local_recv_xp.clear();
@@ -3388,8 +3395,8 @@ PhysicalParticleContainer::Evolve (int lev,
 
     const bool is_last_step = WarpX::GetInstance().is_last_step;
     if (!is_last_step) {
-    constexpr int local = 1;    // TODO: move out
-    my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
+        constexpr int local = 1;    // TODO: move out
+        my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
     }
 #ifdef AMREX_USE_OMP
 #pragma omp parallel
@@ -3681,7 +3688,7 @@ PhysicalParticleContainer::Evolve (int lev,
                             0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
                             a_dt_type);
                     if (!is_last_step) {
-                    fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
+                        fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
                     }
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
@@ -3875,7 +3882,7 @@ PhysicalParticleContainer::Evolve (int lev,
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
     if (!is_last_step) {
-    fusion_Isend_and_Irecv();
+        fusion_Isend_and_Irecv();
     }
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 }
