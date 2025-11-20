@@ -373,6 +373,7 @@ public:
     // 进程间通信数据结构
     const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
     std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
+    std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // 全局生命周期
 
     std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, 初始化为0; 维护发送和接收的字节数，非向上取整
 

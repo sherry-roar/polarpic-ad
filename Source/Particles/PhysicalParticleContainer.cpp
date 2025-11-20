@@ -2732,6 +2732,8 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 {
     constexpr int local = 1;       // TODO: move out
 
+    std::map<int, std::vector< unsigned long long > >& mpi_snd_data = WarpX::GetInstance().mpi_snd_data;
+
     std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = WarpX::GetInstance().remote_send_allcomps;
     std::vector<long>& Rcvs = WarpX::GetInstance().Rcvs;
     std::vector<int>& RcvProc = WarpX::GetInstance().RcvProc;
@@ -2778,7 +2780,8 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 
     using buffer_type = unsigned long long;
 
-    std::map<int, std::vector<buffer_type> > mpi_snd_data;
+    // std::map<int, std::vector<buffer_type> > mpi_snd_data;
+    mpi_snd_data.clear();
     for (const auto& kv : not_ours)
     {
         auto nbt = (kv.second.size() + sizeof(buffer_type)-1)/sizeof(buffer_type);      // 向上取整，从char的个数转向buffer_type的个数
@@ -2898,7 +2901,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
         // AMREX_ASSERT(Who >= 0 && Who < NProcs);
         // AMREX_ASSERT(Cnt < std::numeric_limits<int>::max());
 
-        ParallelDescriptor::Send(kv.second.data(), Cnt, Who, SeqNum,
+        ParallelDescriptor::Asend(kv.second.data(), Cnt, Who, SeqNum,
                                 ParallelContext::CommunicatorSub());
     }
 }
