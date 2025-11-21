@@ -669,6 +669,16 @@ MultiParticleContainer::ApplyBoundaryConditions ()
 }
 
 void
+MultiParticleContainer::fusion_Isend_and_Irecv()
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_Isend_and_Irecv();
+        }
+    }
+}
+
+void
 MultiParticleContainer::fusion_local_collect(int lev)
 {
     for (auto& pc : allcontainers) {
