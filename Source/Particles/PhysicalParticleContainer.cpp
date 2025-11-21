@@ -2921,7 +2921,24 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     if (nrcvs > 0) {
         Vector<MPI_Status>  stats(nrcvs);
         // ParallelDescriptor::Waitall(rreqs, stats);
-        BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), stats.data()) );
+        
+        int all_completed = 0;
+        int num_polls = 0;
+        
+        while (!all_completed) {
+            int flag;
+            MPI_Testall(rreqs.size(), rreqs.data(), &flag, stats.data());
+            num_polls++;
+            
+            if (flag) {
+                all_completed = 1;
+                break;
+            }
+        }
+        
+        printf("Completed after %d polls\n", num_polls);
+
+        // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), stats.data()) );
 
         BL_PROFILE_VAR_START(blp_locate);
 

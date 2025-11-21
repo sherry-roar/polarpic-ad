@@ -500,11 +500,11 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
     const bool& is_last_step = WarpX::GetInstance().is_last_step;
     if (!is_last_step) {
-    if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
-    printf("[WarpX::HandleParticlesAtBoundaries] call fusion_local_collect\n");
-    mypc->fusion_local_collect(finest_level);
-    printf("[WarpX::HandleParticlesAtBoundaries] call fusion_remote_collect\n");
-    mypc->fusion_remote_collect(finest_level);
+        if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
+        printf("[WarpX::HandleParticlesAtBoundaries] call fusion_local_collect\n");
+        mypc->fusion_local_collect(finest_level);
+        printf("[WarpX::HandleParticlesAtBoundaries] call fusion_remote_collect\n");
+        mypc->fusion_remote_collect(finest_level);
     }
     else {
         // Non-Maxwell solver: particles can move by an arbitrary number of cells
@@ -533,7 +533,9 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
             }
         }
     }
-#else    // 如果是在 FUSION_TEST 模式，要注释掉 else
+#endif
+
+#if defined(FUSION_TEST) || not defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
     // Non-Maxwell solver: particles can move by an arbitrary number of cells
     if( electromagnetic_solver_id == ElectromagneticSolverAlgo::None ||
         electromagnetic_solver_id == ElectromagneticSolverAlgo::HybridPIC )
@@ -564,7 +566,7 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
 #ifdef FUSION_TEST
     printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
     if (!is_last_step) {
-    mypc->fusion_test(finest_level);
+        mypc->fusion_test(finest_level);
     }
 #endif
 
