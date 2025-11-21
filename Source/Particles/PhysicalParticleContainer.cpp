@@ -2804,8 +2804,6 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
             Snds[kv.first] = kv.second.size();
         }
 
-        if (NumSnds == 0) { return; }
-
         const int SeqNum = ParallelDescriptor::SeqNum();
 
         const int num_rcvs = static_cast<int>(neighbor_procs.size());
