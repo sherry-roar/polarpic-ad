@@ -3930,11 +3930,12 @@ PhysicalParticleContainer::Evolve (int lev,
         SplitParticles(lev);
     }
 
-#ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) && defined(FIELD_OVERLAP)
     if (!is_last_step) {
+        printf("Run FIELD_OVERLAP\n");
         fusion_Isend_and_Irecv();
     }
-#endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+#endif  // FIELD_OVERLAP
 }
 
 void
