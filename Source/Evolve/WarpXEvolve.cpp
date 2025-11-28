@@ -501,9 +501,7 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
     const bool& is_last_step = WarpX::GetInstance().is_last_step;
     if (!is_last_step) {
         if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
-        printf("[WarpX::HandleParticlesAtBoundaries] call fusion_local_collect\n");
         mypc->fusion_local_collect(finest_level);
-        printf("[WarpX::HandleParticlesAtBoundaries] call fusion_remote_collect\n");
         mypc->fusion_remote_collect(finest_level);
     }
     else {

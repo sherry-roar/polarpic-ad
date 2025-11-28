@@ -385,6 +385,7 @@ public:
 
     // Vector<MPI_Status>  stats;     // size: nrcvs
     amrex::Vector<MPI_Request> rreqs;        // size: nrcvs
+    amrex::Vector<MPI_Request> sreqs;
     amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.
 
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition

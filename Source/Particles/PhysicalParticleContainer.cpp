@@ -2742,6 +2742,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
     rOffset.clear();
     std::size_t& TotRcvBytes = WarpX::GetInstance().TotRcvBytes;
     Vector<MPI_Request>& rreqs = WarpX::GetInstance().rreqs;
+    Vector<MPI_Request>& sreqs = WarpX::GetInstance().sreqs;
     Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
 
     // 远程发送粒子数据
@@ -2807,8 +2808,10 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
         const int SeqNum = ParallelDescriptor::SeqNum();
 
         const int num_rcvs = static_cast<int>(neighbor_procs.size());
-        Vector<MPI_Status>  stats(num_rcvs);
+        Vector<MPI_Status>  rstats(num_rcvs);
+        Vector<MPI_Status>  sstats(num_rcvs);
         Vector<MPI_Request> rreqs(num_rcvs);
+        Vector<MPI_Request> sreqs(num_rcvs);
 
         // Post receives
         for (int i = 0; i < num_rcvs; ++i) {
@@ -2824,12 +2827,15 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
             const int Who = neighbor_procs[i];
             const Long Cnt = 1;
 
-            ParallelDescriptor::Send(&Snds[Who], Cnt, Who, SeqNum,
-                                ParallelContext::CommunicatorSub());
+            // ParallelDescriptor::Send(&Snds[Who], Cnt, Who, SeqNum,
+            //                     ParallelContext::CommunicatorSub());
+            sreqs[i] = ParallelDescriptor::Asend(&Snds[Who], Cnt, Who, SeqNum,
+                                ParallelContext::CommunicatorSub()).req();
         }
 
         if (num_rcvs > 0) {
-            ParallelDescriptor::Waitall(rreqs, stats);
+            ParallelDescriptor::Waitall(rreqs, rstats);
+            ParallelDescriptor::Waitall(sreqs, sstats);
         }
     }
 
@@ -2871,6 +2877,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
     // Vector<MPI_Request> rreqs(nrcvs);
         
     rreqs.resize(nrcvs);
+    sreqs.clear();
 
     // Allocate data for rcvs as one big chunk.
     // Vector<unsigned long long> recvdata(TotRcvInts);
@@ -2899,8 +2906,13 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
         // AMREX_ASSERT(Who >= 0 && Who < NProcs);
         // AMREX_ASSERT(Cnt < std::numeric_limits<int>::max());
 
-        ParallelDescriptor::Asend(kv.second.data(), Cnt, Who, SeqNum,
-                                ParallelContext::CommunicatorSub());
+        // ParallelDescriptor::Send(kv.second.data(), Cnt, Who, SeqNum,
+        //                         ParallelContext::CommunicatorSub());
+        MPI_Request sreq = ParallelDescriptor::Asend(kv.second.data(), Cnt, Who, SeqNum,
+                                ParallelContext::CommunicatorSub()).req();
+        sreqs.push_back(sreq);
+
+        printf("From %d to %d: send %d bytes\n", ParallelDescriptor::MyProc(), Who, Cnt * sizeof(buffer_type));
     }
 }
 
@@ -2916,18 +2928,20 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     std::vector<std::size_t>& rOffset = WarpX::GetInstance().rOffset;
     std::size_t& TotRcvBytes = WarpX::GetInstance().TotRcvBytes;
     Vector<MPI_Request>& rreqs = WarpX::GetInstance().rreqs;
+    Vector<MPI_Request>& sreqs = WarpX::GetInstance().sreqs;
     Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
     const auto nrcvs = static_cast<int>(RcvProc.size());
     if (nrcvs > 0) {
-        Vector<MPI_Status>  stats(nrcvs);
-        // ParallelDescriptor::Waitall(rreqs, stats);
+        Vector<MPI_Status>  rstats(nrcvs);
+        Vector<MPI_Status>  sstats(sreqs.size());
+        // ParallelDescriptor::Waitall(rreqs, rstats);
         
         int all_completed = 0;
         int num_polls = 0;
         
         while (!all_completed) {
             int flag;
-            MPI_Testall(rreqs.size(), rreqs.data(), &flag, stats.data());
+            MPI_Testall(rreqs.size(), rreqs.data(), &flag, rstats.data());
             num_polls++;
             
             if (flag) {
@@ -2938,8 +2952,8 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
         
         printf("Completed after %d polls\n", num_polls);
 
-        // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), stats.data()) );
-
+        // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), rstats.data()) );
+        BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
         BL_PROFILE_VAR_START(blp_locate);
 
         int npart = TotRcvBytes / superparticle_size;       // 计算有多少个粒子
@@ -9313,7 +9327,7 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
     reduce_area += rdtscv() - reduce_start;
 
     double total = (double)(init_area + aos_area + precompute_area + sort_area + calculate_area + reduce_area);
-    printf("init: %lf, aos: %lf, pre: %lf, sort: %lf, cal: %lf, reduce: %lf\n", (double)init_area / total, (double)aos_area / total, (double)precompute_area / total, (double)sort_area / total, (double)calculate_area / total, (double)reduce_area / total);
+    // printf("init: %lf, aos: %lf, pre: %lf, sort: %lf, cal: %lf, reduce: %lf\n", (double)init_area / total, (double)aos_area / total, (double)precompute_area / total, (double)sort_area / total, (double)calculate_area / total, (double)reduce_area / total);
 }
 
 bool
@@ -9654,8 +9668,6 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
             outside_particles_index += num_outside;
         }
     }
-
-    printf("outside_particles num: %d\n", outside_particles_index);
 
     int tail = np_to_push - 1;
     int tail_outside_index = outside_particles_index - 1;
