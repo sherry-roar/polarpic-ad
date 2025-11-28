@@ -2730,6 +2730,10 @@ PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps
 void
 PhysicalParticleContainer::fusion_Isend_and_Irecv()
 {
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::prepare_send_buf", blp_prepare_send_buf);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::handshake_local", blp_handshake_local);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::Send_And_Recv", blp_Send_And_Recv);
+    BL_PROFILE_VAR_START(blp_prepare_send_buf);
     constexpr int local = 1;       // TODO: move out
 
     std::map<int, std::vector< unsigned long long > >& mpi_snd_data = WarpX::GetInstance().mpi_snd_data;
@@ -2797,6 +2801,10 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
     std::vector<long> Snds(NProcs, 0);
     Rcvs.resize(NProcs, 0);
 
+    BL_PROFILE_VAR_STOP(blp_prepare_send_buf);
+
+    BL_PROFILE_VAR_START(blp_handshake_local);
+
     long NumSnds = 0;
     {
         // BuildRedistributeMask(0, local);
@@ -2838,6 +2846,10 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
             ParallelDescriptor::Waitall(sreqs, sstats);
         }
     }
+
+    BL_PROFILE_VAR_STOP(blp_handshake_local);
+
+    BL_PROFILE_VAR_START(blp_Send_And_Recv);
 
     const int SeqNum = ParallelDescriptor::SeqNum();        // 全局唯一的 MPI 消息序列号
 
@@ -2914,13 +2926,16 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 
         printf("From %d to %d: send %d bytes\n", ParallelDescriptor::MyProc(), Who, Cnt * sizeof(buffer_type));
     }
+
+    BL_PROFILE_VAR_STOP(blp_Send_And_Recv);
 }
 
 void
 PhysicalParticleContainer::fusion_remote_collect(int lev)
 {
-    BL_PROFILE_VAR_NS("MyRedistributeMPI_locate", blp_locate);
-    BL_PROFILE_VAR_NS("MyRedistributeMPI_copy", blp_copy);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Waitall", blp_waitall);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Locate", blp_locate);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Copy", blp_copy);
     const int superparticle_size = WarpX::GetInstance().superparticle_size;
 
     std::vector<long>& Rcvs = WarpX::GetInstance().Rcvs;
@@ -2932,6 +2947,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
     const auto nrcvs = static_cast<int>(RcvProc.size());
     if (nrcvs > 0) {
+        BL_PROFILE_VAR_START(blp_waitall);
         Vector<MPI_Status>  rstats(nrcvs);
         Vector<MPI_Status>  sstats(sreqs.size());
         // ParallelDescriptor::Waitall(rreqs, rstats);
@@ -2954,6 +2970,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
 
         // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), rstats.data()) );
         BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
+        BL_PROFILE_VAR_STOP(blp_waitall);
         BL_PROFILE_VAR_START(blp_locate);
 
         int npart = TotRcvBytes / superparticle_size;       // 计算有多少个粒子
@@ -3074,6 +3091,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
 void
 PhysicalParticleContainer::fusion_local_collect(int lev)
 {
+    BL_PROFILE("MyRedistribute::fusion_local_collect()");
     #pragma omp parallel
     for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
     {
@@ -9563,6 +9581,7 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
                          long np_to_push,
                          int lev, int gather_lev)
 {
+    BL_PROFILE("MyRedistribute::fusion_pack()");
     const int thread_num = omp_get_thread_num();
 
     using RType = amrex::ParticleReal;
@@ -9748,8 +9767,6 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
 
     int& g_new_particles_begin = ptile.g_new_particles_begin;
     g_new_particles_begin = tail + 1;
-
-    printf("np_to_push: %ld, g_new_particles_begin: %d\n", np_to_push, g_new_particles_begin);
 
     const int MyProc = ParallelContext::MyProcSub();
     const auto local_index = pti.GetPairIndex();
