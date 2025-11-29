@@ -2853,6 +2853,8 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 
     const int SeqNum = ParallelDescriptor::SeqNum();        // 全局唯一的 MPI 消息序列号
 
+    sreqs.clear();
+
     // 如果本进程既不发也不收，则提前 return，避免后续通信和缓冲区处理
     if (local)
     {
@@ -2889,7 +2891,6 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
     // Vector<MPI_Request> rreqs(nrcvs);
         
     rreqs.resize(nrcvs);
-    sreqs.clear();
 
     // Allocate data for rcvs as one big chunk.
     // Vector<unsigned long long> recvdata(TotRcvInts);
