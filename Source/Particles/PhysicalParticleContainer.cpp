@@ -2946,30 +2946,52 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     Vector<MPI_Request>& sreqs = WarpX::GetInstance().sreqs;
     Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
     const auto nrcvs = static_cast<int>(RcvProc.size());
-    if (nrcvs > 0) {
+    const auto nsnds = static_cast<int>(sreqs.size());
+
+    if (nsnds > 0) {
         BL_PROFILE_VAR_START(blp_waitall);
-        Vector<MPI_Status>  rstats(nrcvs);
         Vector<MPI_Status>  sstats(sreqs.size());
-        // ParallelDescriptor::Waitall(rreqs, rstats);
-        
-        int all_completed = 0;
-        int num_polls = 0;
-        
-        while (!all_completed) {
+        int send_completed = 0;
+        int send_polls = 0;
+        while (!send_completed) {
             int flag;
-            MPI_Testall(rreqs.size(), rreqs.data(), &flag, rstats.data());
-            num_polls++;
+            MPI_Testall(sreqs.size(), sreqs.data(), &flag, sstats.data());
+            send_polls++;
             
             if (flag) {
-                all_completed = 1;
+                send_completed = 1;
                 break;
             }
         }
+
+        printf("Send completed after %d polls\n", send_polls);
+
+        // BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
+        BL_PROFILE_VAR_STOP(blp_waitall);
+    }
+
+    if (nrcvs > 0) {
+        BL_PROFILE_VAR_START(blp_waitall);
+        Vector<MPI_Status>  rstats(nrcvs);
+        // ParallelDescriptor::Waitall(rreqs, rstats);
         
-        printf("Completed after %d polls\n", num_polls);
+        int recv_completed = 0;
+        int recv_polls = 0;
+        
+        while (!recv_completed) {
+            int flag;
+            MPI_Testall(rreqs.size(), rreqs.data(), &flag, rstats.data());
+            recv_polls++;
+            
+            if (flag) {
+                recv_completed = 1;
+                break;
+            }
+        }
+
+        printf("Recv completed after %d polls\n", recv_polls);
 
         // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), rstats.data()) );
-        BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
         BL_PROFILE_VAR_STOP(blp_waitall);
         BL_PROFILE_VAR_START(blp_locate);
 
