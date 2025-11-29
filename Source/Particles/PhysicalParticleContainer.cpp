@@ -3890,6 +3890,39 @@ PhysicalParticleContainer::Evolve (int lev,
 
                 WARPX_PROFILE_VAR_STOP(blp_fg);
 
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) && defined(UNROLL_OMP)
+            }
+        }
+    }
+
+    printf("Run UNROLL_OMP\n");
+    fusion_Isend_and_Irecv();
+
+    #pragma omp parallel
+    {
+        const int thread_num = omp_get_thread_num();
+        
+        for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+        {
+            auto wt = static_cast<amrex::Real>(amrex::second());
+            
+            // Extract particle data
+            auto& attribs = pti.GetAttribs();
+            auto&  wp = attribs[PIdx::w];
+            auto& uxp = attribs[PIdx::ux];
+            auto& uyp = attribs[PIdx::uy];
+            auto& uzp = attribs[PIdx::uz];
+
+            const long np = pti.numParticles();
+
+            long nfine_current = np;
+            // 这里有个修改 nfine_current 的逻辑，但实际上并不会调用这个函数
+            const long np_current = (cjx) ? nfine_current : np;
+
+            if (! do_not_push)
+            {
+#endif  // UNROLL_OMP
+
                 // Current Deposition
                 if (!skip_deposition)
                 {
