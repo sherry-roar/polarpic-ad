@@ -409,8 +409,19 @@ public:
         size_t data_buffer_mem_size = 0;
         size_t data_buffer_blk_size = 0;
         unr_mem_h data_buffer_mem_h;
-        std::vector<std::vector<unr_blk_h>> data_blk_h; // 维度：[who, thread_id]
-        std::vector<std::vector<unr_sig_h>> data_sig_h; // 维度：[who, thread_id]
+        std::vector<std::vector<unr_blk_h>> data_buffer_blk_h; // 维度：[who, thread_id]
+        std::vector<std::vector<unr_sig_h>> data_buffer_sig_h; // 维度：[who, thread_id]
+
+        // 分奇偶步数双缓冲
+        void* count_secondary_buffer = nullptr;         // 副缓冲区和主缓冲区的大小一致
+        unr_mem_h count_secondary_buffer_mem_h;
+        std::vector<std::vector<unr_blk_h>> count_secondary_buffer_blk_h;
+        std::vector<std::vector<unr_sig_h>> count_secondary_buffer_sig_h;
+
+        void* data_secondary_buffer = nullptr;
+        unr_mem_h data_secondary_buffer_mem_h;
+        std::vector<std::vector<unr_blk_h>> data_secondary_buffer_blk_h;
+        std::vector<std::vector<unr_sig_h>> data_secondary_buffer_sig_h;
 
         void* get_who_count_buffer(int who, int thread_id) {
             int max_threads = omp_get_max_threads();
@@ -444,14 +455,14 @@ public:
         {
             std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
             int who_idx = who_to_idx[who];
-            return data_sig_h[who_idx][thread_id];
+            return data_buffer_sig_h[who_idx][thread_id];
         }
 
         unr_blk_h& get_who_data_blk_h(int who, int thread_id) 
         {
             std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
             int who_idx = who_to_idx[who];
-            return data_blk_h[who_idx][thread_id];
+            return data_buffer_blk_h[who_idx][thread_id];
         }
 
         void* get_whoidx_count_buffer(int who_idx, int thread_id) {
@@ -476,12 +487,60 @@ public:
 
         unr_sig_h& get_whoidx_data_sig_h(int who_idx, int thread_id) 
         {
-            return data_sig_h[who_idx][thread_id];
+            return data_buffer_sig_h[who_idx][thread_id];
         }
 
         unr_blk_h& get_whoidx_data_blk_h(int who_idx, int thread_id) 
         {
-            return data_blk_h[who_idx][thread_id];
+            return data_buffer_blk_h[who_idx][thread_id];
+        }
+
+        // 自适应获取缓冲区
+        void* adaptive_get_whoidx_count_buffer(int who_idx, int thread_id, int step)
+        {
+            int choice = step % 2;
+            int max_threads = omp_get_max_threads();
+
+            if (choice == 0) {
+                return (char*)count_buffer + (who_idx * max_threads + thread_id) * count_buffer_blk_size;
+            }
+            else {
+                return (char*)count_secondary_buffer + (who_idx * max_threads + thread_id) * count_buffer_blk_size;
+            }
+        }
+
+        unr_sig_h& adaptive_get_whoidx_count_sig_h(int who_idx, int thread_id, int step)
+        {
+            int choice = step % 2;
+            if (choice == 0) {
+                return count_buffer_sig_h[who_idx][thread_id];
+            }
+            else {
+                return count_secondary_buffer_sig_h[who_idx][thread_id];
+            }
+        }
+
+        void* adaptive_get_whoidx_data_buffer(int who_idx, int thread_id, int step)
+        {
+            int choice = step % 2;
+            int max_threads = omp_get_max_threads();
+            if (choice == 0) {
+                return (char*)data_buffer + (who_idx * max_threads + thread_id) * data_buffer_blk_size;
+            }
+            else {
+                return (char*)data_secondary_buffer + (who_idx * max_threads + thread_id) * data_buffer_blk_size;
+            }
+        }
+
+        unr_sig_h& adaptive_get_whoidx_data_sig_h(int who_idx, int thread_id, int step)
+        {
+            int choice = step % 2;
+            if (choice == 0) {
+                return data_buffer_sig_h[who_idx][thread_id];
+            }
+            else {
+                return data_secondary_buffer_sig_h[who_idx][thread_id];
+            }
         }
 
         // 像 vector 数组一样维护几个成员函数，不属于 UNR 的成员，主要用于定位打包数据的数量高效打包数据
@@ -532,6 +591,8 @@ public:
     UNR_WarpX_buffer unr_send_buffer;
     UNR_WarpX_buffer unr_recv_buffer;
 
+    int step = -1;          // 维护当前步数
+
     struct UNR_WarpX_rmt_blk {
         std::vector<std::vector<unr_blk_h>> rmt_count_blk;
         std::vector<std::vector<unr_blk_h>> rmt_data_blk;
@@ -553,6 +614,30 @@ public:
 
         unr_blk_h get_whoidx_rmt_data_blk(int who_idx, int thread_id) {
             return rmt_data_blk[who_idx][thread_id];
+        }
+
+        // 远程块要分主副
+        std::vector<std::vector<unr_blk_h>> rmt_count_secondary_blk;
+        std::vector<std::vector<unr_blk_h>> rmt_data_secondary_blk;
+
+        unr_blk_h adaptive_get_whoidx_rmt_count_blk(int who_idx, int thread_id, int step) {
+            int choice = step % 2;
+            if (choice == 0) {
+                return rmt_count_blk[who_idx][thread_id];
+            }
+            else {
+                return rmt_count_secondary_blk[who_idx][thread_id];
+            }
+        }
+
+        unr_blk_h adaptive_get_whoidx_rmt_data_blk(int who_idx, int thread_id, int step) {
+            int choice = step % 2;
+            if (choice == 0) {
+                return rmt_data_blk[who_idx][thread_id];
+            }
+            else {
+                return rmt_data_secondary_blk[who_idx][thread_id];
+            }
         }
     };
 

@@ -2783,6 +2783,16 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
 
     unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_buffer_mem_h);
     unr_mem_alloc_reg(&unr_recv_data_buffer, unr_recv_data_buffer_mem_size, &unr_recv_data_buffer_mem_h);
+
+    // 为接收缓冲区注册副缓冲区
+    void* & unr_recv_count_secondary_buffer = unr_recv_buffer.count_secondary_buffer;
+    unr_mem_h& unr_recv_count_secondary_buffer_mem_h = unr_recv_buffer.count_secondary_buffer_mem_h;
+
+    void* & unr_recv_data_secondary_buffer = unr_recv_buffer.data_secondary_buffer;
+    unr_mem_h& unr_recv_data_secondary_buffer_mem_h = unr_recv_buffer.data_secondary_buffer_mem_h;
+
+    unr_mem_alloc_reg(&unr_recv_count_secondary_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_secondary_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_recv_data_secondary_buffer, unr_recv_data_buffer_mem_size, &unr_recv_data_secondary_buffer_mem_h);
     
     // 同步 mem 注册信息
     unr_mem_reg_sync();
@@ -2790,32 +2800,31 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     // 注册 "数据量" 和 "数据" 发送和接收 blk
     std::vector<std::vector<unr_blk_h>>& unr_send_count_buffer_blk_h = unr_send_buffer.count_buffer_blk_h;
     std::vector<std::vector<unr_sig_h>>& unr_send_count_buffer_sig_h = unr_send_buffer.count_buffer_sig_h;
-    std::vector<std::vector<unr_blk_h>>& unr_send_data_blk_h = unr_send_buffer.data_blk_h;
-    std::vector<std::vector<unr_sig_h>>& unr_send_data_sig_h = unr_send_buffer.data_sig_h;
+    std::vector<std::vector<unr_blk_h>>& unr_send_data_buffer_blk_h = unr_send_buffer.data_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_send_data_buffer_sig_h = unr_send_buffer.data_buffer_sig_h;
 
     unr_send_count_buffer_blk_h.resize(neigubor_proc_num);
     unr_send_count_buffer_sig_h.resize(neigubor_proc_num);
-    unr_send_data_blk_h.resize(neigubor_proc_num);
-    unr_send_data_sig_h.resize(neigubor_proc_num);
+    unr_send_data_buffer_blk_h.resize(neigubor_proc_num);
+    unr_send_data_buffer_sig_h.resize(neigubor_proc_num);
 
     std::vector<std::vector<unr_blk_h>>& unr_recv_count_buffer_blk_h = unr_recv_buffer.count_buffer_blk_h;
     std::vector<std::vector<unr_sig_h>>& unr_recv_count_buffer_sig_h = unr_recv_buffer.count_buffer_sig_h;
-    std::vector<std::vector<unr_blk_h>>& unr_recv_data_blk_h = unr_recv_buffer.data_blk_h;
-    std::vector<std::vector<unr_sig_h>>& unr_recv_data_sig_h = unr_recv_buffer.data_sig_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_buffer_blk_h = unr_recv_buffer.data_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_recv_data_buffer_sig_h = unr_recv_buffer.data_buffer_sig_h;
 
     unr_recv_count_buffer_blk_h.resize(neigubor_proc_num);
     unr_recv_count_buffer_sig_h.resize(neigubor_proc_num);
-    unr_recv_data_blk_h.resize(neigubor_proc_num);
-    unr_recv_data_sig_h.resize(neigubor_proc_num);
+    unr_recv_data_buffer_blk_h.resize(neigubor_proc_num);
+    unr_recv_data_buffer_sig_h.resize(neigubor_proc_num);
     
     for (int i = 0; i < neigubor_proc_num; ++i) {
-        int who = neighbor_procs[i];
         int who_idx = i;        // who_to_idx[who]
 
         std::vector<unr_blk_h>& who_unr_send_count_blk_h = unr_send_count_buffer_blk_h[who_idx];
         std::vector<unr_sig_h>& who_unr_send_count_sig_h = unr_send_count_buffer_sig_h[who_idx];
-        std::vector<unr_blk_h>& who_unr_send_data_blk_h = unr_send_data_blk_h[who_idx];
-        std::vector<unr_sig_h>& who_unr_send_data_sig_h = unr_send_data_sig_h[who_idx];
+        std::vector<unr_blk_h>& who_unr_send_data_blk_h = unr_send_data_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_send_data_sig_h = unr_send_data_buffer_sig_h[who_idx];
 
         who_unr_send_count_blk_h.resize(max_threads);
         who_unr_send_count_sig_h.resize(max_threads);
@@ -2824,8 +2833,8 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
 
         std::vector<unr_blk_h>& who_unr_recv_count_blk_h = unr_recv_count_buffer_blk_h[who_idx];
         std::vector<unr_sig_h>& who_unr_recv_count_sig_h = unr_recv_count_buffer_sig_h[who_idx];
-        std::vector<unr_blk_h>& who_unr_recv_data_blk_h = unr_recv_data_blk_h[who_idx];
-        std::vector<unr_sig_h>& who_unr_recv_data_sig_h = unr_recv_data_sig_h[who_idx];
+        std::vector<unr_blk_h>& who_unr_recv_data_blk_h = unr_recv_data_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_recv_data_sig_h = unr_recv_data_buffer_sig_h[who_idx];
 
         who_unr_recv_count_blk_h.resize(max_threads);
         who_unr_recv_count_sig_h.resize(max_threads);
@@ -2846,6 +2855,39 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
             unr_blk_reg(unr_recv_data_buffer_mem_h, (who_idx * max_threads + j) * unr_recv_data_buffer_blk_size, unr_recv_data_buffer_blk_size, UNR_NO_SIGNAL, who_unr_recv_data_sig_h[j], &who_unr_recv_data_blk_h[j]);
         }
     }
+
+    // 为接收缓冲区注册副缓冲区
+    std::vector<std::vector<unr_blk_h>>& unr_recv_count_secondary_buffer_blk_h = unr_recv_buffer.count_secondary_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_recv_count_secondary_buffer_sig_h = unr_recv_buffer.count_secondary_buffer_sig_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_secondary_buffer_blk_h = unr_recv_buffer.data_secondary_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_recv_data_secondary_buffer_sig_h = unr_recv_buffer.data_secondary_buffer_sig_h;
+
+    unr_recv_count_secondary_buffer_blk_h.resize(neigubor_proc_num);
+    unr_recv_count_secondary_buffer_sig_h.resize(neigubor_proc_num);
+    unr_recv_data_secondary_buffer_blk_h.resize(neigubor_proc_num);
+    unr_recv_data_secondary_buffer_sig_h.resize(neigubor_proc_num);
+
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+
+        std::vector<unr_blk_h>& who_unr_recv_count_secondary_blk_h = unr_recv_count_secondary_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_recv_count_secondary_sig_h = unr_recv_count_secondary_buffer_sig_h[who_idx];
+        std::vector<unr_blk_h>& who_unr_recv_data_secondary_blk_h = unr_recv_data_secondary_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_recv_data_secondary_sig_h = unr_recv_data_secondary_buffer_sig_h[who_idx];
+
+        who_unr_recv_count_secondary_blk_h.resize(max_threads);
+        who_unr_recv_count_secondary_sig_h.resize(max_threads);
+        who_unr_recv_data_secondary_blk_h.resize(max_threads);
+        who_unr_recv_data_secondary_sig_h.resize(max_threads);
+
+        for (int j = 0; j < max_threads; ++j) {
+            unr_sig_create(&who_unr_recv_count_secondary_sig_h[j], num_event);
+            unr_blk_reg(unr_recv_count_secondary_buffer_mem_h, (who_idx * max_threads + j) * unr_recv_count_buffer_blk_size, unr_recv_count_buffer_blk_size, UNR_NO_SIGNAL, who_unr_recv_count_secondary_sig_h[j], &who_unr_recv_count_secondary_blk_h[j]);
+
+            unr_sig_create(&who_unr_recv_data_secondary_sig_h[j], num_event);
+            unr_blk_reg(unr_recv_data_secondary_buffer_mem_h, (who_idx * max_threads + j) * unr_recv_data_buffer_blk_size, unr_recv_data_buffer_blk_size, UNR_NO_SIGNAL, who_unr_recv_data_secondary_sig_h[j], &who_unr_recv_data_secondary_blk_h[j]);
+        }
+    }
 }
 
 void
@@ -2860,7 +2902,10 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
 
     std::vector<std::vector<unr_blk_h>>& unr_recv_count_buffer_blk_h = unr_recv_buffer.count_buffer_blk_h;
-    std::vector<std::vector<unr_blk_h>>& unr_recv_data_blk_h = unr_recv_buffer.data_blk_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_buffer_blk_h = unr_recv_buffer.data_buffer_blk_h;
+
+    std::vector<std::vector<unr_blk_h>>& unr_recv_count_secondary_buffer_blk_h = unr_recv_buffer.count_secondary_buffer_blk_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_secondary_buffer_blk_h = unr_recv_buffer.data_secondary_buffer_blk_h;
 
     std::vector<std::vector<unr_blk_h>> mpi_snd_blk(neigubor_proc_num);
     std::vector<std::vector<unr_blk_h>> mpi_rcv_blk(neigubor_proc_num);
@@ -2872,23 +2917,25 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
 
     const int SeqNum = ParallelDescriptor::SeqNum();
 
-    // 将同一个 who 的不同本地线程的 count blk & data bnk 打包在一起，然后非阻塞发送
+    // 将同一个 who 的不同本地线程的主/副接收 count blk & data blk 打包在一起，然后非阻塞发送
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who = neighbor_procs[i];
         int who_idx = i;
         
         std::vector<unr_blk_h>& who_mpi_snd_count_blk_h = mpi_snd_blk[who_idx];
-        who_mpi_snd_count_blk_h.resize(max_threads * 2);        // 要向每个邻居进程发 count 和 data
+        who_mpi_snd_count_blk_h.resize(max_threads * 2 * 2);        // 要向每个邻居进程发 count 和 data，以及分主副
         for (int j = 0; j < max_threads; ++j) {
-            who_mpi_snd_count_blk_h[j * 2] = unr_recv_count_buffer_blk_h[who_idx][j];
-            who_mpi_snd_count_blk_h[j * 2 + 1] = unr_recv_data_blk_h[who_idx][j];
+            who_mpi_snd_count_blk_h[j * 4] = unr_recv_count_buffer_blk_h[who_idx][j];
+            who_mpi_snd_count_blk_h[j * 4 + 1] = unr_recv_data_buffer_blk_h[who_idx][j];
+            who_mpi_snd_count_blk_h[j * 4 + 2] = unr_recv_count_secondary_buffer_blk_h[who_idx][j];
+            who_mpi_snd_count_blk_h[j * 4 + 3] = unr_recv_data_secondary_buffer_blk_h[who_idx][j];
         }
 
         std::vector<unr_blk_h>& who_mpi_recv_count_blk_h = mpi_rcv_blk[who_idx];
-        who_mpi_recv_count_blk_h.resize(max_threads * 2);
+        who_mpi_recv_count_blk_h.resize(max_threads * 2 * 2);
 
-        MPI_Irecv(who_mpi_recv_count_blk_h.data(), max_threads * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &recv_blk_reqs[i]);
-        MPI_Isend(who_mpi_snd_count_blk_h.data(), max_threads * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &send_blk_reqs[i]);
+        MPI_Irecv(who_mpi_recv_count_blk_h.data(), max_threads * 2 * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &recv_blk_reqs[i]);
+        MPI_Isend(who_mpi_snd_count_blk_h.data(), max_threads * 2 * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &send_blk_reqs[i]);
     }
 
     // 等待发送和接受完成
@@ -2901,6 +2948,11 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
     rmt_count_blk.resize(neigubor_proc_num);
     rmt_data_blk.resize(neigubor_proc_num);
 
+    std::vector<std::vector<unr_blk_h>>& rmt_count_secondary_blk = WarpX::GetInstance().unr_rmt_blk.rmt_count_secondary_blk;
+    std::vector<std::vector<unr_blk_h>>& rmt_data_secondary_blk = WarpX::GetInstance().unr_rmt_blk.rmt_data_secondary_blk;
+    rmt_count_secondary_blk.resize(neigubor_proc_num);
+    rmt_data_secondary_blk.resize(neigubor_proc_num);
+
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who_idx = i;
 
@@ -2908,10 +2960,17 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
         std::vector<unr_blk_h>& who_rmt_data_blk_h = rmt_data_blk[who_idx];
         who_rmt_count_blk_h.resize(max_threads);
         who_rmt_data_blk_h.resize(max_threads);
+
+        std::vector<unr_blk_h>& who_rmt_count_secondary_blk_h = rmt_count_secondary_blk[who_idx];
+        std::vector<unr_blk_h>& who_rmt_data_secondary_blk_h = rmt_data_secondary_blk[who_idx];
+        who_rmt_count_secondary_blk_h.resize(max_threads);
+        who_rmt_data_secondary_blk_h.resize(max_threads);
         
         for (int j = 0; j < max_threads; ++j) {
-            who_rmt_count_blk_h[j] = mpi_rcv_blk[who_idx][j * 2];
-            who_rmt_data_blk_h[j] = mpi_rcv_blk[who_idx][j * 2 + 1];
+            who_rmt_count_blk_h[j] = mpi_rcv_blk[who_idx][j * 4];
+            who_rmt_data_blk_h[j] = mpi_rcv_blk[who_idx][j * 4 + 1];
+            who_rmt_count_secondary_blk_h[j] = mpi_rcv_blk[who_idx][j * 4 + 2];
+            who_rmt_data_secondary_blk_h[j] = mpi_rcv_blk[who_idx][j * 4 + 3];
         }
     }
 }
@@ -3224,17 +3283,100 @@ PhysicalParticleContainer::fusion_unr_put()
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
 
-    std::vector<unr_blk_h> loc_count_blk_h;
-    std::vector<unr_sig_h> loc_count_sig_h;
-    std::vector<size_t> loc_count_offset;
-    std::vector<size_t> loc_count_size;
+    // std::vector<unr_blk_h> loc_count_blk_h;
+    // std::vector<unr_sig_h> loc_count_sig_h;
+    // std::vector<size_t> loc_count_offset;
+    // std::vector<size_t> loc_count_size;
 
-    std::vector<unr_blk_h> rmt_count_blk_h;
-    std::vector<unr_sig_h> rmt_count_sig_h;
-    std::vector<size_t> rmt_count_offset;
-    std::vector<uru_transfer_t> dma_count_type;
+    // std::vector<unr_blk_h> rmt_count_blk_h;
+    // std::vector<unr_sig_h> rmt_count_sig_h;
+    // std::vector<size_t> rmt_count_offset;
+    // std::vector<uru_transfer_t> dma_count_type;
 
-    // sdma 发送 "数据量"，采用握手逻辑
+    // // sdma 发送 "数据量"，采用握手逻辑
+    // for (int i = 0; i < neigubor_proc_num; ++i) {
+    //     int who_idx = i;
+
+    //     for (int j = 0; j < max_threads; ++j) {
+    //         // 给 count blk 设置数据量
+    //         size_t send_buffer_size = unr_send_buffer.size_whoidx(who_idx, j);
+    //         long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         *send_count_buffer = send_buffer_size;
+
+    //         loc_count_blk_h.push_back(unr_send_buffer.get_whoidx_count_blk_h(who_idx, j));
+    //         loc_count_sig_h.push_back(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+    //         loc_count_offset.push_back(0);
+    //         loc_count_size.push_back(unr_send_buffer.count_buffer_blk_size);
+            
+    //         rmt_count_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_count_blk(who_idx, j));
+    //         rmt_count_sig_h.push_back(UNR_NO_SIGNAL);
+    //         rmt_count_offset.push_back(0);
+
+    //         dma_count_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
+    //     }
+    // }
+
+    // unr_blk_part_rdma_batch_start(neigubor_proc_num * max_threads, loc_count_blk_h.data(), loc_count_sig_h.data(), loc_count_offset.data(), loc_count_size.data(), rmt_count_blk_h.data(), rmt_count_sig_h.data(), rmt_count_offset.data(), dma_count_type.data());
+
+    // for (int i = 0; i < neigubor_proc_num; ++i) {
+    //     int who_idx = i;
+    //     for (int j = 0; j < max_threads; ++j) {
+    //         unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+    //         unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+    //         unr_sig_wait(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
+    //         unr_sig_reset(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
+    //     }
+    // }
+
+    // std::vector<unr_blk_h> loc_data_blk_h;
+    // std::vector<unr_sig_h> loc_data_sig_h;
+    // std::vector<size_t> loc_data_offset;
+    // std::vector<size_t> loc_data_size;
+
+    // std::vector<unr_blk_h> rmt_data_blk_h;
+    // std::vector<unr_sig_h> rmt_data_sig_h;
+    // std::vector<size_t> rmt_data_offset;
+    // std::vector<uru_transfer_t> dma_data_type;
+
+    // // sdma 发送 "数据"
+    // int send_data_blk_num = 0;
+    // for (int i = 0; i < neigubor_proc_num; ++i) {
+    //     int who_idx = i;
+    //     for (int j = 0; j < max_threads; ++j) {
+    //         long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         long send_buffer_size = *send_count_buffer;
+
+    //         loc_data_blk_h.push_back(unr_send_buffer.get_whoidx_data_blk_h(who_idx, j));
+    //         loc_data_sig_h.push_back(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //         loc_data_offset.push_back(0);
+    //         loc_data_size.push_back(send_buffer_size);
+
+    //         rmt_data_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_data_blk(who_idx, j));
+    //         rmt_data_sig_h.push_back(UNR_NO_SIGNAL);
+    //         rmt_data_offset.push_back(0);
+
+    //         dma_data_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
+
+    //         send_data_blk_num++;
+    //     }
+    // }
+
+    // unr_blk_part_rdma_batch_start(send_data_blk_num, loc_data_blk_h.data(), loc_data_sig_h.data(), loc_data_offset.data(), loc_data_size.data(), rmt_data_blk_h.data(), rmt_data_sig_h.data(), rmt_data_offset.data(), dma_data_type.data());
+
+    // sdma 同时发送 "数据量" 和 "数据"，到自适应远程块
+    std::vector<unr_blk_h> loc_blk_h;
+    std::vector<unr_sig_h> loc_sig_h;
+    std::vector<size_t> loc_offset;
+    std::vector<size_t> loc_size;
+
+    std::vector<unr_blk_h> rmt_blk_h;
+    std::vector<unr_sig_h> rmt_sig_h;
+    std::vector<size_t> rmt_offset;
+    std::vector<uru_transfer_t> dma_type;
+
+    int step = WarpX::GetInstance().step;
+
+    // 先打包 "数据量"，再打包 "数据"
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who_idx = i;
 
@@ -3244,65 +3386,36 @@ PhysicalParticleContainer::fusion_unr_put()
             long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
             *send_count_buffer = send_buffer_size;
 
-            loc_count_blk_h.push_back(unr_send_buffer.get_whoidx_count_blk_h(who_idx, j));
-            loc_count_sig_h.push_back(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
-            loc_count_offset.push_back(0);
-            loc_count_size.push_back(unr_send_buffer.count_buffer_blk_size);
+            loc_blk_h.push_back(unr_send_buffer.get_whoidx_count_blk_h(who_idx, j));
+            loc_sig_h.push_back(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            loc_offset.push_back(0);
+            loc_size.push_back(unr_send_buffer.count_buffer_blk_size);
             
-            rmt_count_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_count_blk(who_idx, j));
-            rmt_count_sig_h.push_back(UNR_NO_SIGNAL);
-            rmt_count_offset.push_back(0);
+            rmt_blk_h.push_back(unr_rmt_blk.adaptive_get_whoidx_rmt_count_blk(who_idx, j, step));
+            rmt_sig_h.push_back(UNR_NO_SIGNAL);
+            rmt_offset.push_back(0);
 
-            dma_count_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
+            dma_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
         }
-    }
 
-    unr_blk_part_rdma_batch_start(neigubor_proc_num * max_threads, loc_count_blk_h.data(), loc_count_sig_h.data(), loc_count_offset.data(), loc_count_size.data(), rmt_count_blk_h.data(), rmt_count_sig_h.data(), rmt_count_offset.data(), dma_count_type.data());
-
-    for (int i = 0; i < neigubor_proc_num; ++i) {
-        int who_idx = i;
-        for (int j = 0; j < max_threads; ++j) {
-            unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
-            unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
-            unr_sig_wait(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
-            unr_sig_reset(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
-        }
-    }
-
-    std::vector<unr_blk_h> loc_data_blk_h;
-    std::vector<unr_sig_h> loc_data_sig_h;
-    std::vector<size_t> loc_data_offset;
-    std::vector<size_t> loc_data_size;
-
-    std::vector<unr_blk_h> rmt_data_blk_h;
-    std::vector<unr_sig_h> rmt_data_sig_h;
-    std::vector<size_t> rmt_data_offset;
-    std::vector<uru_transfer_t> dma_data_type;
-
-    // sdma 发送 "数据"
-    int send_data_blk_num = 0;
-    for (int i = 0; i < neigubor_proc_num; ++i) {
-        int who_idx = i;
         for (int j = 0; j < max_threads; ++j) {
             long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
             long send_buffer_size = *send_count_buffer;
 
-            loc_data_blk_h.push_back(unr_send_buffer.get_whoidx_data_blk_h(who_idx, j));
-            loc_data_sig_h.push_back(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
-            loc_data_offset.push_back(0);
-            loc_data_size.push_back(send_buffer_size);
+            loc_blk_h.push_back(unr_send_buffer.get_whoidx_data_blk_h(who_idx, j));
+            loc_sig_h.push_back(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+            loc_offset.push_back(0);
+            loc_size.push_back(send_buffer_size);
 
-            rmt_data_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_data_blk(who_idx, j));
-            rmt_data_sig_h.push_back(UNR_NO_SIGNAL);
-            rmt_data_offset.push_back(0);
+            rmt_blk_h.push_back(unr_rmt_blk.adaptive_get_whoidx_rmt_data_blk(who_idx, j, step));
+            rmt_sig_h.push_back(UNR_NO_SIGNAL);
+            rmt_offset.push_back(0);
 
-            dma_data_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
-
-            send_data_blk_num++;
+            dma_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
         }
     }
 
-    unr_blk_part_rdma_batch_start(send_data_blk_num, loc_data_blk_h.data(), loc_data_sig_h.data(), loc_data_offset.data(), loc_data_size.data(), rmt_data_blk_h.data(), rmt_data_sig_h.data(), rmt_data_offset.data(), dma_data_type.data());
+    unr_blk_part_rdma_batch_start(neigubor_proc_num * max_threads * 2, loc_blk_h.data(), loc_sig_h.data(), loc_offset.data(), loc_size.data(), rmt_blk_h.data(), rmt_sig_h.data(), rmt_offset.data(), dma_type.data());
 }
 
 void
@@ -3488,16 +3601,50 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
     WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
     amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
     int superparticle_size = WarpX::GetInstance().superparticle_size;
+    int step = WarpX::GetInstance().step;
 
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
 
+    // for (int i = 0; i < neigubor_proc_num; ++i) {
+    //     int who_idx = i;
+    //     for (int j = 0; j < max_threads; ++j) {
+    //         long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         long send_buffer_size = *send_count_buffer;
+    //         long* recv_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         long recv_buffer_size = *recv_count_buffer;
+
+    //         if (send_buffer_size > 0) {
+    //             unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //             unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //         }
+
+    //         if (recv_buffer_size > 0) {
+    //             unr_sig_wait(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //             unr_sig_reset(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //         }
+    //     }
+    // }
+
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who_idx = i;
+
+        // 先等待 "数据量"
+        for (int j = 0; j < max_threads; ++j) {
+            // 先等发送
+            unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+
+            // 后等接收
+            unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
+            unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
+        }
+
+        // 后等待 "数据"
         for (int j = 0; j < max_threads; ++j) {
             long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
             long send_buffer_size = *send_count_buffer;
-            long* recv_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long* recv_count_buffer = (long*)unr_recv_buffer.adaptive_get_whoidx_count_buffer(who_idx, j, step);
             long recv_buffer_size = *recv_count_buffer;
 
             if (send_buffer_size > 0) {
@@ -3506,8 +3653,8 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
             }
 
             if (recv_buffer_size > 0) {
-                unr_sig_wait(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
-                unr_sig_reset(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+                unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
+                unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
             }
         }
     }
@@ -3520,12 +3667,12 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who_idx = i;
         for (int j = 0; j < max_threads; ++j) {
-            long* recev_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long* recev_count_buffer = (long*)unr_recv_buffer.adaptive_get_whoidx_count_buffer(who_idx, j, step);
             long recv_buffer_size = *recev_count_buffer;
             long recv_particle_num = recv_buffer_size / superparticle_size;
 
             for (int k = 0; k < recv_particle_num; ++k) {
-                char* pbuf = (char*)unr_recv_buffer.get_whoidx_data_buffer(who_idx, j) + k * superparticle_size;
+                char* pbuf = (char*)unr_recv_buffer.adaptive_get_whoidx_data_buffer(who_idx, j, step) + k * superparticle_size;
 
                 Particle<NStructReal, NStructInt> p;
 
@@ -3553,13 +3700,13 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
     for (int i = 0; i < neigubor_proc_num; ++i) {
         int who_idx = i;
         for (int j = 0; j < max_threads; ++j) {
-            long* recev_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long* recev_count_buffer = (long*)unr_recv_buffer.adaptive_get_whoidx_count_buffer(who_idx, j, step);
             long recv_buffer_size = *recev_count_buffer;
             long recv_particle_num = recv_buffer_size / superparticle_size;
 
             for (int k = 0; k < recv_particle_num; ++k) {
                 auto& ptile = ParticlesAt(lev, rcv_grid[ipart], rcv_tile[ipart]);
-                char* pbuf = (char*)unr_recv_buffer.get_whoidx_data_buffer(who_idx, j) + k * superparticle_size;
+                char* pbuf = (char*)unr_recv_buffer.adaptive_get_whoidx_data_buffer(who_idx, j, step) + k * superparticle_size;
 
                 uint64_t idcpudata;
                 std::memcpy(&idcpudata, pbuf, sizeof(uint64_t));
