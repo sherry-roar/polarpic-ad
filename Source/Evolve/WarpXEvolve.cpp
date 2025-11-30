@@ -502,7 +502,11 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
     if (!is_last_step) {
         if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
         mypc->fusion_local_collect(finest_level);
+#if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         mypc->fusion_remote_collect(finest_level);
+#elif defined(UNROLL_OMP_UNR)
+        mypc->fusion_unr_remote_collect(finest_level);
+#endif
     }
     else {
         // Non-Maxwell solver: particles can move by an arbitrary number of cells
@@ -564,7 +568,11 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
 #ifdef FUSION_TEST
     printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
     if (!is_last_step) {
+#if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         mypc->fusion_test(finest_level);
+#elif defined(UNROLL_OMP_UNR)
+        mypc->fusion_unr_test(finest_level);
+#endif
     }
 #endif
 

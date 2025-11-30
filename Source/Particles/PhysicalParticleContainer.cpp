@@ -116,6 +116,9 @@ using namespace amrex;
 
 #include <arm_sve.h>
 #include <arm_sme.h>
+
+#include <unr.h>
+
 using namespace std;
 
 typedef svfloat64_t svec __attribute__((arm_sve_vector_bits(__ARM_FEATURE_SVE_BITS)));
@@ -2728,6 +2731,285 @@ PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps
 }
 
 void
+PhysicalParticleContainer::UNR_WarpX_buffer_reg()
+{
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+    int& num_tiles = WarpX::GetInstance().num_tiles;
+    int& m_init_np = WarpX::GetInstance().m_init_np;
+    const int& num_event = WarpX::GetInstance().num_event;
+
+    int max_threads = omp_get_max_threads();
+    int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+
+    // 注册 "数据量" 和 "数据" 发送 mem
+    void* & unr_send_count_buffer = unr_send_buffer.count_buffer;
+    size_t& unr_send_count_buffer_mem_size = unr_send_buffer.count_buffer_mem_size;
+    size_t& unr_send_count_buffer_blk_size = unr_send_buffer.count_buffer_blk_size;
+    unr_mem_h& unr_send_count_buffer_mem_h = unr_send_buffer.count_buffer_mem_h;
+
+    void* & unr_send_data_buffer = unr_send_buffer.data_buffer;
+    size_t& unr_send_data_buffer_mem_size = unr_send_buffer.data_buffer_mem_size;
+    size_t& unr_send_data_buffer_blk_size = unr_send_buffer.data_buffer_blk_size;
+    unr_mem_h& unr_send_data_buffer_mem_h = unr_send_buffer.data_buffer_mem_h;
+    
+    unr_send_count_buffer_mem_size = neigubor_proc_num * max_threads * sizeof(long);        // 每个邻居进程的每个线程都要一个 "数据量" 缓冲区
+    unr_send_count_buffer_blk_size = sizeof(long);                                        // 每个 "数据量" 缓冲区的大小
+
+    unr_send_data_buffer_mem_size = num_tiles * m_init_np * sizeof(amrex::ParticleReal);    // 预留的大小为每个 tile 一个 np 大小的缓冲区
+    unr_send_data_buffer_blk_size = unr_send_data_buffer_mem_size / neigubor_proc_num / max_threads;    // 将 mem 平分为每个邻居进程的每个线程一个缓冲区
+
+    unr_mem_alloc_reg(&unr_send_count_buffer, unr_send_count_buffer_mem_size, &unr_send_count_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_send_data_buffer, unr_send_data_buffer_mem_size, &unr_send_data_buffer_mem_h);
+
+    // 注册 "数据量" 和 "数据" 接收 mem
+    void* & unr_recv_count_buffer = unr_recv_buffer.count_buffer;
+    size_t& unr_recv_count_buffer_mem_size = unr_recv_buffer.count_buffer_mem_size;
+    size_t& unr_recv_count_buffer_blk_size = unr_recv_buffer.count_buffer_blk_size;
+    unr_mem_h& unr_recv_count_buffer_mem_h = unr_recv_buffer.count_buffer_mem_h;
+
+    void* & unr_recv_data_buffer = unr_recv_buffer.data_buffer;
+    size_t& unr_recv_data_buffer_mem_size = unr_recv_buffer.data_buffer_mem_size;
+    size_t& unr_recv_data_buffer_blk_size = unr_recv_buffer.data_buffer_blk_size;
+    unr_mem_h& unr_recv_data_buffer_mem_h = unr_recv_buffer.data_buffer_mem_h;
+
+    unr_recv_count_buffer_mem_size = neigubor_proc_num * max_threads * sizeof(long);
+    unr_recv_count_buffer_blk_size = sizeof(long);
+    
+    unr_recv_data_buffer_mem_size = num_tiles * m_init_np * sizeof(amrex::ParticleReal);
+    unr_recv_data_buffer_blk_size = unr_recv_data_buffer_mem_size / neigubor_proc_num / max_threads;
+
+    unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_recv_data_buffer, unr_recv_data_buffer_mem_size, &unr_recv_data_buffer_mem_h);
+    
+    // 同步 mem 注册信息
+    unr_mem_reg_sync();
+
+    // 注册 "数据量" 和 "数据" 发送和接收 blk
+    std::vector<std::vector<unr_blk_h>>& unr_send_count_buffer_blk_h = unr_send_buffer.count_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_send_count_buffer_sig_h = unr_send_buffer.count_buffer_sig_h;
+    std::vector<std::vector<unr_blk_h>>& unr_send_data_blk_h = unr_send_buffer.data_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_send_data_sig_h = unr_send_buffer.data_sig_h;
+
+    unr_send_count_buffer_blk_h.resize(neigubor_proc_num);
+    unr_send_count_buffer_sig_h.resize(neigubor_proc_num);
+    unr_send_data_blk_h.resize(neigubor_proc_num);
+    unr_send_data_sig_h.resize(neigubor_proc_num);
+
+    std::vector<std::vector<unr_blk_h>>& unr_recv_count_buffer_blk_h = unr_recv_buffer.count_buffer_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_recv_count_buffer_sig_h = unr_recv_buffer.count_buffer_sig_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_blk_h = unr_recv_buffer.data_blk_h;
+    std::vector<std::vector<unr_sig_h>>& unr_recv_data_sig_h = unr_recv_buffer.data_sig_h;
+
+    unr_recv_count_buffer_blk_h.resize(neigubor_proc_num);
+    unr_recv_count_buffer_sig_h.resize(neigubor_proc_num);
+    unr_recv_data_blk_h.resize(neigubor_proc_num);
+    unr_recv_data_sig_h.resize(neigubor_proc_num);
+    
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who = neighbor_procs[i];
+        int who_idx = i;        // who_to_idx[who]
+
+        std::vector<unr_blk_h>& who_unr_send_count_blk_h = unr_send_count_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_send_count_sig_h = unr_send_count_buffer_sig_h[who_idx];
+        std::vector<unr_blk_h>& who_unr_send_data_blk_h = unr_send_data_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_send_data_sig_h = unr_send_data_sig_h[who_idx];
+
+        who_unr_send_count_blk_h.resize(max_threads);
+        who_unr_send_count_sig_h.resize(max_threads);
+        who_unr_send_data_blk_h.resize(max_threads);
+        who_unr_send_data_sig_h.resize(max_threads);
+
+        std::vector<unr_blk_h>& who_unr_recv_count_blk_h = unr_recv_count_buffer_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_recv_count_sig_h = unr_recv_count_buffer_sig_h[who_idx];
+        std::vector<unr_blk_h>& who_unr_recv_data_blk_h = unr_recv_data_blk_h[who_idx];
+        std::vector<unr_sig_h>& who_unr_recv_data_sig_h = unr_recv_data_sig_h[who_idx];
+
+        who_unr_recv_count_blk_h.resize(max_threads);
+        who_unr_recv_count_sig_h.resize(max_threads);
+        who_unr_recv_data_blk_h.resize(max_threads);
+        who_unr_recv_data_sig_h.resize(max_threads);
+
+        for (int j = 0; j < max_threads; ++j) {
+            unr_sig_create(&who_unr_send_count_sig_h[j], num_event);
+            unr_blk_reg(unr_send_count_buffer_mem_h, (who_idx * max_threads + j) * unr_send_count_buffer_blk_size, unr_send_count_buffer_blk_size, who_unr_send_count_sig_h[j], UNR_NO_SIGNAL, &who_unr_send_count_blk_h[j]);
+
+            unr_sig_create(&who_unr_send_data_sig_h[j], num_event);
+            unr_blk_reg(unr_send_data_buffer_mem_h, (who_idx * max_threads + j) * unr_send_data_buffer_blk_size, unr_send_data_buffer_blk_size, who_unr_send_data_sig_h[j], UNR_NO_SIGNAL, &who_unr_send_data_blk_h[j]);
+
+            unr_sig_create(&who_unr_recv_count_sig_h[j], num_event);
+            unr_blk_reg(unr_recv_count_buffer_mem_h, (who_idx * max_threads + j) * unr_recv_count_buffer_blk_size, unr_recv_count_buffer_blk_size, UNR_NO_SIGNAL, who_unr_recv_count_sig_h[j], &who_unr_recv_count_blk_h[j]);
+
+            unr_sig_create(&who_unr_recv_data_sig_h[j], num_event);
+            unr_blk_reg(unr_recv_data_buffer_mem_h, (who_idx * max_threads + j) * unr_recv_data_buffer_blk_size, unr_recv_data_buffer_blk_size, UNR_NO_SIGNAL, who_unr_recv_data_sig_h[j], &who_unr_recv_data_blk_h[j]);
+        }
+    }
+}
+
+void
+PhysicalParticleContainer::UNR_WarpX_blk_sync()
+{
+    // 各个邻居进程互相告知 rmt blk
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+    map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+    
+    int max_threads = omp_get_max_threads();
+    int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+    std::vector<std::vector<unr_blk_h>>& unr_recv_count_buffer_blk_h = unr_recv_buffer.count_buffer_blk_h;
+    std::vector<std::vector<unr_blk_h>>& unr_recv_data_blk_h = unr_recv_buffer.data_blk_h;
+
+    std::vector<std::vector<unr_blk_h>> mpi_snd_blk(neigubor_proc_num);
+    std::vector<std::vector<unr_blk_h>> mpi_rcv_blk(neigubor_proc_num);
+
+    std::vector<MPI_Request> send_blk_reqs(neigubor_proc_num);
+    std::vector<MPI_Status> send_blk_status(neigubor_proc_num);
+    std::vector<MPI_Request> recv_blk_reqs(neigubor_proc_num);
+    std::vector<MPI_Status> recv_blk_status(neigubor_proc_num);
+
+    const int SeqNum = ParallelDescriptor::SeqNum();
+
+    // 将同一个 who 的不同本地线程的 count blk & data bnk 打包在一起，然后非阻塞发送
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who = neighbor_procs[i];
+        int who_idx = i;
+        
+        std::vector<unr_blk_h>& who_mpi_snd_count_blk_h = mpi_snd_blk[who_idx];
+        who_mpi_snd_count_blk_h.resize(max_threads * 2);        // 要向每个邻居进程发 count 和 data
+        for (int j = 0; j < max_threads; ++j) {
+            who_mpi_snd_count_blk_h[j * 2] = unr_recv_count_buffer_blk_h[who_idx][j];
+            who_mpi_snd_count_blk_h[j * 2 + 1] = unr_recv_data_blk_h[who_idx][j];
+        }
+
+        std::vector<unr_blk_h>& who_mpi_recv_count_blk_h = mpi_rcv_blk[who_idx];
+        who_mpi_recv_count_blk_h.resize(max_threads * 2);
+
+        MPI_Irecv(who_mpi_recv_count_blk_h.data(), max_threads * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &recv_blk_reqs[i]);
+        MPI_Isend(who_mpi_snd_count_blk_h.data(), max_threads * 2, MPI_UNR_BLK_H, who, SeqNum, ParallelDescriptor::Communicator(), &send_blk_reqs[i]);
+    }
+
+    // 等待发送和接受完成
+    MPI_Waitall(neigubor_proc_num, recv_blk_reqs.data(), recv_blk_status.data());
+    MPI_Waitall(neigubor_proc_num, send_blk_reqs.data(), send_blk_status.data());
+
+    // 将接收到的 blk 解包
+    std::vector<std::vector<unr_blk_h>>& rmt_count_blk = WarpX::GetInstance().unr_rmt_blk.rmt_count_blk;
+    std::vector<std::vector<unr_blk_h>>& rmt_data_blk = WarpX::GetInstance().unr_rmt_blk.rmt_data_blk;
+    rmt_count_blk.resize(neigubor_proc_num);
+    rmt_data_blk.resize(neigubor_proc_num);
+
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+
+        std::vector<unr_blk_h>& who_rmt_count_blk_h = rmt_count_blk[who_idx];
+        std::vector<unr_blk_h>& who_rmt_data_blk_h = rmt_data_blk[who_idx];
+        who_rmt_count_blk_h.resize(max_threads);
+        who_rmt_data_blk_h.resize(max_threads);
+        
+        for (int j = 0; j < max_threads; ++j) {
+            who_rmt_count_blk_h[j] = mpi_rcv_blk[who_idx][j * 2];
+            who_rmt_data_blk_h[j] = mpi_rcv_blk[who_idx][j * 2 + 1];
+        }
+    }
+}
+
+void
+PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev, int nghost)
+{
+    // 如果做全局通信，则为每个进程都做线程安全分配
+    if (nghost <= 0)
+    {
+        std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = WarpX::GetInstance().remote_send_allcomps;
+        int max_threads = omp_get_max_threads();
+        for (int i = 0; i < ParallelContext::NProcsSub(); ++i) {
+            remote_send_allcomps[i].resize(max_threads);
+        }
+        return;
+    }
+
+    std::unique_ptr<iMultiFab>& redistribute_mask_ptr = WarpX::GetInstance().redistribute_mask_ptr;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+    int& redistribute_mask_nghost = WarpX::GetInstance().redistribute_mask_nghost;
+    if (redistribute_mask_ptr == nullptr ||
+        redistribute_mask_nghost < nghost ||
+        ! BoxArray::SameRefs(redistribute_mask_ptr->boxArray(), this->ParticleBoxArray(lev)) ||
+        ! DistributionMapping::SameRefs(redistribute_mask_ptr->DistributionMap(), this->ParticleDistributionMap(lev)))
+    {
+        const Geometry& geom = this->Geom(lev);
+        const BoxArray& ba = this->ParticleBoxArray(lev);
+        const DistributionMapping& dmap = this->ParticleDistributionMap(lev);
+
+        redistribute_mask_nghost = nghost;
+        redistribute_mask_ptr = std::make_unique<iMultiFab>(ba, dmap, 2, nghost);
+        redistribute_mask_ptr->setVal(-1, nghost);
+
+        const auto tile_size_do = amrex::ParticleContainerBase::do_tiling ? amrex::ParticleContainerBase::tile_size : IntVect::TheZeroVector();
+
+        #pragma omp parallel
+        for (MFIter mfi(*redistribute_mask_ptr, tile_size_do); mfi.isValid(); ++mfi)
+        {
+            const Box& box = mfi.tilebox();
+            const int grid_id = mfi.index();
+            const int tile_id = mfi.LocalTileIndex();
+            (*redistribute_mask_ptr)[mfi].template setVal<RunOn::Host>(grid_id, box, 0, 1);
+            (*redistribute_mask_ptr)[mfi].template setVal<RunOn::Host>(tile_id, box, 1, 1);
+        }
+
+        redistribute_mask_ptr->FillBoundary(geom.periodicity());
+
+        neighbor_procs.clear();
+        int& num_tiles = WarpX::GetInstance().num_tiles;
+        num_tiles = 0;
+        for (MFIter mfi(*redistribute_mask_ptr, tile_size_do); mfi.isValid(); ++mfi)
+        {
+            const Box& box = mfi.growntilebox();
+            for (IntVect iv = box.smallEnd(); iv <= box.bigEnd(); box.next(iv))
+            {
+                const int grid = (*redistribute_mask_ptr)[mfi](iv, 0);
+                if (grid >= 0)
+                {
+                    const int global_rank = this->ParticleDistributionMap(lev)[grid];
+                    const int rank = ParallelContext::global_to_local_rank(global_rank);
+                    if (rank != ParallelContext::MyProcSub()) {
+                        neighbor_procs.push_back(rank);
+                    }
+                }
+            }
+            num_tiles++;
+        }
+        RemoveDuplicates(neighbor_procs);
+
+        int max_threads = omp_get_max_threads();
+        int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+        if (neigubor_proc_num == 0) {
+            return;
+        }
+
+        if (max_threads == 0) {
+            amrex::Abort("max_threads is 0, cannot proceed with UNR registration");
+        }
+
+        // 构建 who_to_idx
+        std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+        for (int i = 0; i < neigubor_proc_num; ++i) {
+            int who = neighbor_procs[i];
+            who_to_idx[who] = i;
+        }
+
+        // 注册 UNR 内存和块，并用 MPI 同步
+        UNR_WarpX_buffer_reg();
+        UNR_WarpX_blk_sync();
+    }
+
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
+    unr_send_buffer.clear();
+}
+
+void
 PhysicalParticleContainer::fusion_Isend_and_Irecv()
 {
     BL_PROFILE_VAR_NS("MyRedistributeMPI::prepare_send_buf", blp_prepare_send_buf);
@@ -2932,6 +3214,98 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 }
 
 void
+PhysicalParticleContainer::fusion_unr_put()
+{
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+    WarpX::UNR_WarpX_rmt_blk& unr_rmt_blk = WarpX::GetInstance().unr_rmt_blk;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+
+    int max_threads = omp_get_max_threads();
+    int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+    std::vector<unr_blk_h> loc_count_blk_h;
+    std::vector<unr_sig_h> loc_count_sig_h;
+    std::vector<size_t> loc_count_offset;
+    std::vector<size_t> loc_count_size;
+
+    std::vector<unr_blk_h> rmt_count_blk_h;
+    std::vector<unr_sig_h> rmt_count_sig_h;
+    std::vector<size_t> rmt_count_offset;
+    std::vector<uru_transfer_t> dma_count_type;
+
+    // sdma 发送 "数据量"，采用握手逻辑
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+
+        for (int j = 0; j < max_threads; ++j) {
+            // 给 count blk 设置数据量
+            size_t send_buffer_size = unr_send_buffer.size_whoidx(who_idx, j);
+            long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+            *send_count_buffer = send_buffer_size;
+
+            loc_count_blk_h.push_back(unr_send_buffer.get_whoidx_count_blk_h(who_idx, j));
+            loc_count_sig_h.push_back(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            loc_count_offset.push_back(0);
+            loc_count_size.push_back(unr_send_buffer.count_buffer_blk_size);
+            
+            rmt_count_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_count_blk(who_idx, j));
+            rmt_count_sig_h.push_back(UNR_NO_SIGNAL);
+            rmt_count_offset.push_back(0);
+
+            dma_count_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
+        }
+    }
+
+    unr_blk_part_rdma_batch_start(neigubor_proc_num * max_threads, loc_count_blk_h.data(), loc_count_sig_h.data(), loc_count_offset.data(), loc_count_size.data(), rmt_count_blk_h.data(), rmt_count_sig_h.data(), rmt_count_offset.data(), dma_count_type.data());
+
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+        for (int j = 0; j < max_threads; ++j) {
+            unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            unr_sig_wait(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
+            unr_sig_reset(unr_recv_buffer.get_whoidx_count_sig_h(who_idx, j));
+        }
+    }
+
+    std::vector<unr_blk_h> loc_data_blk_h;
+    std::vector<unr_sig_h> loc_data_sig_h;
+    std::vector<size_t> loc_data_offset;
+    std::vector<size_t> loc_data_size;
+
+    std::vector<unr_blk_h> rmt_data_blk_h;
+    std::vector<unr_sig_h> rmt_data_sig_h;
+    std::vector<size_t> rmt_data_offset;
+    std::vector<uru_transfer_t> dma_data_type;
+
+    // sdma 发送 "数据"
+    int send_data_blk_num = 0;
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+        for (int j = 0; j < max_threads; ++j) {
+            long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+            long send_buffer_size = *send_count_buffer;
+
+            loc_data_blk_h.push_back(unr_send_buffer.get_whoidx_data_blk_h(who_idx, j));
+            loc_data_sig_h.push_back(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+            loc_data_offset.push_back(0);
+            loc_data_size.push_back(send_buffer_size);
+
+            rmt_data_blk_h.push_back(unr_rmt_blk.get_whoidx_rmt_data_blk(who_idx, j));
+            rmt_data_sig_h.push_back(UNR_NO_SIGNAL);
+            rmt_data_offset.push_back(0);
+
+            dma_data_type.push_back(URU_TRANSFER_TYPE_DMA_PUT);
+
+            send_data_blk_num++;
+        }
+    }
+
+    unr_blk_part_rdma_batch_start(send_data_blk_num, loc_data_blk_h.data(), loc_data_sig_h.data(), loc_data_offset.data(), loc_data_size.data(), rmt_data_blk_h.data(), rmt_data_sig_h.data(), rmt_data_offset.data(), dma_data_type.data());
+}
+
+void
 PhysicalParticleContainer::fusion_remote_collect(int lev)
 {
     BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Waitall", blp_waitall);
@@ -3104,6 +3478,139 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
         }
 
         BL_PROFILE_VAR_STOP(blp_copy);
+    }
+}
+
+void
+PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
+{
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+    int superparticle_size = WarpX::GetInstance().superparticle_size;
+
+    int max_threads = omp_get_max_threads();
+    int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+        for (int j = 0; j < max_threads; ++j) {
+            long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+            long send_buffer_size = *send_count_buffer;
+            long* recv_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long recv_buffer_size = *recv_count_buffer;
+
+            if (send_buffer_size > 0) {
+                unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+                unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+            }
+
+            if (recv_buffer_size > 0) {
+                unr_sig_wait(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+                unr_sig_reset(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+            }
+        }
+    }
+
+    std::vector<int> rcv_grid;
+    std::vector<int> rcv_tile;
+
+    // 收集数据
+    ParticleLocData pld;
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+        for (int j = 0; j < max_threads; ++j) {
+            long* recev_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long recv_buffer_size = *recev_count_buffer;
+            long recv_particle_num = recv_buffer_size / superparticle_size;
+
+            for (int k = 0; k < recv_particle_num; ++k) {
+                char* pbuf = (char*)unr_recv_buffer.get_whoidx_data_buffer(who_idx, j) + k * superparticle_size;
+
+                Particle<NStructReal, NStructInt> p;
+
+                std::memcpy(&p.m_idcpu, pbuf, sizeof(uint64_t));
+
+                ParticleReal pos[AMREX_SPACEDIM];
+                std::memcpy(&pos[0], pbuf + sizeof(uint64_t), AMREX_SPACEDIM*sizeof(ParticleReal));
+                AMREX_D_TERM(p.pos(0) = pos[0];,
+                            p.pos(1) = pos[1];,
+                            p.pos(2) = pos[2]);
+
+                bool success = Where(p, pld, 0, 0, 0);
+                if (!success)
+                {
+                    amrex::Abort("MyRedistributeMPI_locate:: invalid particle.");
+                }
+
+                rcv_grid.push_back(pld.m_grid);
+                rcv_tile.push_back(pld.m_tile);
+            }
+        }
+    }
+
+    int ipart = 0;
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+        for (int j = 0; j < max_threads; ++j) {
+            long* recev_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+            long recv_buffer_size = *recev_count_buffer;
+            long recv_particle_num = recv_buffer_size / superparticle_size;
+
+            for (int k = 0; k < recv_particle_num; ++k) {
+                auto& ptile = ParticlesAt(lev, rcv_grid[ipart], rcv_tile[ipart]);
+                char* pbuf = (char*)unr_recv_buffer.get_whoidx_data_buffer(who_idx, j) + k * superparticle_size;
+
+                uint64_t idcpudata;
+                std::memcpy(&idcpudata, pbuf, sizeof(uint64_t));
+                pbuf += sizeof(uint64_t);
+                ParticleReal xp, yp, zp, ux, uy, uz, w;
+                std::memcpy(&xp, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&yp, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&zp, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&ux, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&uy, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&uz, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+                std::memcpy(&w, pbuf, sizeof(ParticleReal));
+                pbuf += sizeof(ParticleReal);
+
+#ifdef FUSION_TEST
+                ptile.unr_remote_recv_idcpu_test.push_back(idcpudata);
+                ptile.unr_remote_recv_xp_test.push_back(xp);
+                ptile.unr_remote_recv_yp_test.push_back(yp);
+                ptile.unr_remote_recv_zp_test.push_back(zp);
+                ptile.unr_remote_recv_ux_test.push_back(ux);
+                ptile.unr_remote_recv_uy_test.push_back(uy);
+                ptile.unr_remote_recv_uz_test.push_back(uz);
+                ptile.unr_remote_recv_w_test.push_back(w);
+#else
+                auto& soa = ptile.GetStructOfArrays();
+                auto& iddata = soa.GetIdCPUData();
+                auto& soa_m_x = soa.GetRealData(PIdx::x);
+                auto& soa_m_y = soa.GetRealData(PIdx::y);
+                auto& soa_m_z = soa.GetRealData(PIdx::z);
+                auto& soa_ux = soa.GetRealData(PIdx::ux);
+                auto& soa_uy = soa.GetRealData(PIdx::uy);
+                auto& soa_uz = soa.GetRealData(PIdx::uz);
+                auto& soa_wp = soa.GetRealData(PIdx::w);
+                iddata.push_back(idcpudata);
+                soa_m_x.push_back(xp);
+                soa_m_y.push_back(yp);
+                soa_m_z.push_back(zp);
+                soa_ux.push_back(ux);
+                soa_uy.push_back(uy);
+                soa_uz.push_back(uz);
+                soa_wp.push_back(w);
+#endif
+                ipart++;
+            }
+        }
     }
 }
 
@@ -3428,6 +3935,249 @@ PhysicalParticleContainer::fusion_test(int lev)
 }
 
 void
+PhysicalParticleContainer::fusion_unr_test(int lev)
+{
+#ifdef FUSION_TEST
+    for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+    {
+        auto& ptile = ParticlesAt(lev, pti);
+        long np = ptile.numParticles();
+
+        using RType = amrex::ParticleReal;
+        auto& soa = pti.GetStructOfArrays();
+        uint64_t* AMREX_RESTRICT idcpu = soa.GetIdCPUData().dataPtr();
+        RType* AMREX_RESTRICT m_x = soa.GetRealData(PIdx::x).dataPtr();
+        RType* AMREX_RESTRICT m_y = soa.GetRealData(PIdx::y).dataPtr();
+        RType* AMREX_RESTRICT m_z = soa.GetRealData(PIdx::z).dataPtr();
+        
+        auto& attribs = pti.GetAttribs();
+        int offset = 0;
+        ParticleReal* const AMREX_RESTRICT wp = attribs[PIdx::w].dataPtr() + offset;
+        ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr() + offset;
+        ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
+        ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
+
+        const auto local_index = pti.GetPairIndex();
+        const int local_grid = local_index.first;
+        const int local_tile = local_index.second;
+
+        int g_new_particles_begin = ptile.g_new_particles_begin;
+        
+        std::vector<uint64_t>& unr_remote_recv_idcpu_test = ptile.unr_remote_recv_idcpu_test;
+        std::vector<ParticleReal>& unr_remote_recv_xp_test = ptile.unr_remote_recv_xp_test;
+        std::vector<ParticleReal>& unr_remote_recv_yp_test = ptile.unr_remote_recv_yp_test;
+        std::vector<ParticleReal>& unr_remote_recv_zp_test = ptile.unr_remote_recv_zp_test;
+        std::vector<ParticleReal>& unr_remote_recv_ux_test = ptile.unr_remote_recv_ux_test;
+        std::vector<ParticleReal>& unr_remote_recv_uy_test = ptile.unr_remote_recv_uy_test;
+        std::vector<ParticleReal>& unr_remote_recv_uz_test = ptile.unr_remote_recv_uz_test;
+        std::vector<ParticleReal>& unr_remote_recv_w_test = ptile.unr_remote_recv_w_test;
+        int recv_remote_size = unr_remote_recv_idcpu_test.size();
+        
+        // remote test
+        for (int i = 0; i < recv_remote_size; ++i) {
+            uint64_t idcpu_remote = unr_remote_recv_idcpu_test[i];
+            ParticleReal xp_remote = unr_remote_recv_xp_test[i];
+            ParticleReal yp_remote = unr_remote_recv_yp_test[i];
+            ParticleReal zp_remote = unr_remote_recv_zp_test[i];
+            ParticleReal ux_remote = unr_remote_recv_ux_test[i];
+            ParticleReal uy_remote = unr_remote_recv_uy_test[i];
+            ParticleReal uz_remote = unr_remote_recv_uz_test[i];
+            ParticleReal w_remote = unr_remote_recv_w_test[i];
+
+            uint64_t idcpu_err = 1;
+            double xp_err = 1;
+            double yp_err = 1;
+            double zp_err = 1;
+            double ux_err = 1;
+            double uy_err = 1;
+            double uz_err = 1;
+            double w_err = 1;
+            
+            for (long ip = g_new_particles_begin; ip < np; ++ip) {
+                idcpu_err = idcpu[ip] - idcpu_remote;
+                xp_err = fabs(m_x[ip] - xp_remote) / fabs(m_x[ip]);
+                yp_err = fabs(m_y[ip] - yp_remote) / fabs(m_y[ip]);
+                zp_err = fabs(m_z[ip] - zp_remote) / fabs(m_z[ip]);
+                ux_err = fabs(ux[ip] - ux_remote) / fabs(ux[ip]);
+                uy_err = fabs(uy[ip] - uy_remote) / fabs(uy[ip]);
+                uz_err = fabs(uz[ip] - uz_remote) / fabs(uz[ip]);
+                w_err = fabs(wp[ip] - w_remote) / fabs(wp[ip]);
+
+                if (idcpu_err == 0 && xp_err < 1e-8 && yp_err < 1e-8 && zp_err < 1e-8 && ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8 && w_err < 1e-8) {
+                    break;
+                }
+            }
+
+            if (idcpu_err != 0)
+            {
+                amrex::Abort("idcpu_err");
+            }
+            
+            if (xp_err > 1e-8)
+            {
+                printf("i: %d, xp_remote: %.10lf, m_x: %.10lf\n", i, xp_remote, m_x[i]);
+                printf("xp_err: %f\n", xp_err);
+                amrex::Abort("xp_err");
+            }
+
+            if (yp_err > 1e-8)
+            {
+                printf("yp_err: %f\n", yp_err);
+                amrex::Abort("yp_err");
+            }
+
+            if (zp_err > 1e-8)
+            {
+                printf("zp_err: %f\n", zp_err);
+                amrex::Abort("zp_err");
+            }
+
+            if (ux_err > 1e-8)
+            {
+                printf("ux_err: %f\n", ux_err);
+                amrex::Abort("ux_err");
+            }
+
+            if (uy_err > 1e-8)
+            {
+                printf("uy_err: %f\n", uy_err);
+                amrex::Abort("uy_err");
+            }
+
+            if (uz_err > 1e-8)
+            {
+                printf("uz_err: %f\n", uz_err);
+                amrex::Abort("uz_err");
+            }
+
+            if (w_err > 1e-8)
+            {
+                printf("w_err: %f\n", w_err);
+                amrex::Abort("w_err");
+            }
+        }
+
+        unr_remote_recv_idcpu_test.clear();
+        unr_remote_recv_xp_test.clear();
+        unr_remote_recv_yp_test.clear();
+        unr_remote_recv_zp_test.clear();
+        unr_remote_recv_ux_test.clear();
+        unr_remote_recv_uy_test.clear();
+        unr_remote_recv_uz_test.clear();
+        unr_remote_recv_w_test.clear();
+
+        std::vector<uint64_t>& local_recv_idcpu_test = ptile.local_recv_idcpu_test;
+        std::vector<amrex::ParticleReal>& local_recv_xp_test = ptile.local_recv_xp_test;
+        std::vector<amrex::ParticleReal>& local_recv_yp_test = ptile.local_recv_yp_test;
+        std::vector<amrex::ParticleReal>& local_recv_zp_test = ptile.local_recv_zp_test;
+        std::vector<amrex::ParticleReal>& local_recv_ux_test = ptile.local_recv_ux_test;
+        std::vector<amrex::ParticleReal>& local_recv_uy_test = ptile.local_recv_uy_test;
+        std::vector<amrex::ParticleReal>& local_recv_uz_test = ptile.local_recv_uz_test;
+        std::vector<amrex::ParticleReal>& local_recv_w_test = ptile.local_recv_w_test;
+        int recv_local_size = local_recv_idcpu_test.size();
+
+        // local test
+        for (int i = 0; i < recv_local_size; ++i) {
+            uint64_t idcpu_local = local_recv_idcpu_test[i];
+            ParticleReal xp_local = local_recv_xp_test[i];
+            ParticleReal yp_local = local_recv_yp_test[i];
+            ParticleReal zp_local = local_recv_zp_test[i];
+            ParticleReal ux_local = local_recv_ux_test[i];
+            ParticleReal uy_local = local_recv_uy_test[i];
+            ParticleReal uz_local = local_recv_uz_test[i];
+            ParticleReal w_local = local_recv_w_test[i];
+
+            uint64_t idcpu_err = 1;
+            double xp_err = 1;
+            double yp_err = 1;
+            double zp_err = 1;
+            double ux_err = 1;
+            double uy_err = 1;
+            double uz_err = 1;
+            double w_err = 1;
+
+            for (long ip = g_new_particles_begin; ip < np; ++ip) {
+                idcpu_err = idcpu[ip] - idcpu_local;
+                xp_err = fabs(m_x[ip] - xp_local) / fabs(m_x[ip]);
+                yp_err = fabs(m_y[ip] - yp_local) / fabs(m_y[ip]);
+                zp_err = fabs(m_z[ip] - zp_local) / fabs(m_z[ip]);
+                ux_err = fabs(ux[ip] - ux_local) / fabs(ux[ip]);
+                uy_err = fabs(uy[ip] - uy_local) / fabs(uy[ip]);
+                uz_err = fabs(uz[ip] - uz_local) / fabs(uz[ip]);
+                w_err = fabs(wp[ip] - w_local) / fabs(wp[ip]);
+
+                if (idcpu_err == 0 && xp_err < 1e-8 && yp_err < 1e-8 && zp_err < 1e-8 && ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8 && w_err < 1e-8) {
+                    break;
+                }
+            }
+
+            if (idcpu_err != 0)
+            {
+                amrex::Abort("idcpu_err");
+            }
+
+            if (xp_err > 1e-8)
+            {
+                printf("xp_err: %f\n", xp_err);
+                amrex::Abort("xp_err");
+            }
+
+            if (yp_err > 1e-8)
+            {
+                printf("yp_err: %f\n", yp_err);
+                amrex::Abort("yp_err");
+            }
+
+            if (zp_err > 1e-8)
+            {
+                printf("zp_err: %f\n", zp_err);
+                amrex::Abort("zp_err");
+            }
+
+            if (ux_err > 1e-8)
+            {
+                printf("ux_err: %f\n", ux_err);
+                amrex::Abort("ux_err");
+            }
+
+            if (uy_err > 1e-8)
+            {
+                printf("uy_err: %f\n", uy_err);
+                amrex::Abort("uy_err");
+            }
+
+            if (uz_err > 1e-8)
+            {
+                printf("uz_err: %f\n", uz_err);
+                amrex::Abort("uz_err");
+            }
+
+            if (w_err > 1e-8)
+            {
+                printf("w_err: %f\n", w_err);
+                amrex::Abort("w_err");
+            }
+        }
+
+        local_recv_idcpu_test.clear();
+        local_recv_xp_test.clear();
+        local_recv_yp_test.clear();
+        local_recv_zp_test.clear();
+        local_recv_ux_test.clear();
+        local_recv_uy_test.clear();
+        local_recv_uz_test.clear();
+        local_recv_w_test.clear();
+
+        printf("g_new_particles_begin: %d, recv_remote_size: %d, recv_local_size: %d, np: %d\n", g_new_particles_begin, recv_remote_size, recv_local_size, np);
+        if (g_new_particles_begin + recv_remote_size + recv_local_size != np)
+        {
+            amrex::Abort("g_new_particles_begin + recv_remote_size + recv_local_size != np");
+        }
+    }
+#endif  // FUSION_TEST
+}
+
+void
 PhysicalParticleContainer::Evolve (int lev,
                                    const MultiFab& Ex, const MultiFab& Ey, const MultiFab& Ez,
                                    const MultiFab& Bx, const MultiFab& By, const MultiFab& Bz,
@@ -3466,11 +4216,19 @@ PhysicalParticleContainer::Evolve (int lev,
         }
     }
 
+#ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
     const bool is_last_step = WarpX::GetInstance().is_last_step;
     if (!is_last_step) {
         constexpr int local = 1;    // TODO: move out
+#if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
+#elif defined(UNROLL_OMP_UNR)
+        UNR_BuildRedistributeMask_and_ClearSendBuffer(0, local);
+#endif
     }
+#endif // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+
+
 #ifdef AMREX_USE_OMP
 #pragma omp parallel
 #endif
@@ -3754,14 +4512,18 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_PHYSORT_ORDER3
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
-                    printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
+                    // printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
                     PushPX_sve_sme_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
                             0, np_to_push, lev, gather_lev, dt, ScaleFields(false),  
                             a_dt_type);
                     if (!is_last_step) {
+#if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
                         fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
+#elif defined(UNROLL_OMP_UNR)
+                        fusion_pack_unr(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
+#endif
                     }
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
@@ -3922,6 +4684,41 @@ PhysicalParticleContainer::Evolve (int lev,
             if (! do_not_push)
             {
 #endif  // UNROLL_OMP
+
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) && defined(UNROLL_OMP_UNR)
+            }
+        }
+    }
+
+    if (!is_last_step) {
+        printf("Run UNROLL_OMP_UNR\n");
+        fusion_unr_put();
+    }
+
+    #pragma omp parallel
+    {
+        const int thread_num = omp_get_thread_num();
+        
+        for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+        {
+            auto wt = static_cast<amrex::Real>(amrex::second());
+            
+            // Extract particle data
+            auto& attribs = pti.GetAttribs();
+            auto&  wp = attribs[PIdx::w];
+            auto& uxp = attribs[PIdx::ux];
+            auto& uyp = attribs[PIdx::uy];
+            auto& uzp = attribs[PIdx::uz];
+
+            const long np = pti.numParticles();
+
+            long nfine_current = np;
+            // 这里有个修改 nfine_current 的逻辑，但实际上并不会调用这个函数
+            const long np_current = (cjx) ? nfine_current : np;
+
+            if (! do_not_push)
+            {
+#endif  // UNROLL_OMP_UNR
 
                 // Current Deposition
                 if (!skip_deposition)
@@ -9879,6 +10676,276 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
             particles_to_send.resize(new_size);
             
             char* dst = &particles_to_send[old_size];
+            
+            std::memcpy(dst, &soa.GetIdCPUData()[ip], sizeof(uint64_t));
+            dst += sizeof(uint64_t);
+            std::memcpy(dst, &xp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &yp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &zp, sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &ux[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &uy[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &uz[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+            std::memcpy(dst, &wp[ip], sizeof(amrex::ParticleReal));
+            dst += sizeof(amrex::ParticleReal);
+        }
+    }
+}
+
+void
+PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
+                         amrex::IntVect ngEB,
+                         long offset,
+                         long np_to_push,
+                         int lev, int gather_lev)
+{
+    BL_PROFILE("MyRedistribute::fusion_pack_unr()");
+    const int thread_num = omp_get_thread_num();
+
+    using RType = amrex::ParticleReal;
+
+    auto& soa = pti.GetStructOfArrays();
+    RType* AMREX_RESTRICT m_x = soa.GetRealData(PIdx::x).dataPtr();
+    RType* AMREX_RESTRICT m_y = soa.GetRealData(PIdx::y).dataPtr();
+    RType* AMREX_RESTRICT m_z = soa.GetRealData(PIdx::z).dataPtr();
+
+    const amrex::XDim3 dinv = WarpX::InvCellSize(std::max(gather_lev, 0));
+
+    Box box;
+    if (lev == gather_lev) {
+        box = pti.tilebox();
+    } else {
+        const IntVect& ref_ratio = WarpX::RefRatio(gather_lev);
+        box = amrex::coarsen(pti.tilebox(), ref_ratio);
+    }
+
+    box.grow(ngEB);
+
+    const amrex::XDim3 xyzmin = WarpX::LowerCorner(box, gather_lev, 0._rt);
+
+    auto& attribs = pti.GetAttribs();
+    ParticleReal* const AMREX_RESTRICT wp = attribs[PIdx::w].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr() + offset;
+    ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr() + offset;
+
+    int vl = svcntd();
+
+    auto& ptile = ParticlesAt(lev, pti);
+    int& g_move_begin = ptile.g_move_begin;
+
+    Box realbox = pti.tilebox();
+    const Dim3 reallo = lbound(realbox);
+    const Dim3 realhi = ubound(realbox);
+
+    const Dim3 growlo = lbound(box);
+    const Dim3 growhi = ubound(box);
+
+    int containlox = reallo.x - growlo.x - 1;
+    int containloy = reallo.y - growlo.y - 1;
+    int containloz = reallo.z - growlo.z - 1;
+    int containhix = realhi.x - growlo.x - 1;
+    int containhiy = realhi.y - growlo.y - 1;
+    int containhiz = realhi.z - growlo.z - 1;
+
+    int m_init_np = WarpX::GetInstance().m_init_np;
+    int* outside_particles = WarpX::GetInstance().int_buffer + thread_num * m_init_np;
+    int outside_particles_index = 0;
+
+    intVec containlox_v(containlox);
+    intVec containloy_v(containloy);
+    intVec containloz_v(containloz);
+    intVec containhix_v(containhix);
+    intVec containhiy_v(containhiy);
+    intVec containhiz_v(containhiz);
+
+    for (long ip = g_move_begin; ip < np_to_push; ip += vl)
+    {
+        // ParticleReal xp = m_x[ip];
+        // ParticleReal yp = m_y[ip];
+        // ParticleReal zp = m_z[ip];
+
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
+        Vec xp_v = Vec::Load(p_ip, &m_x[ip]);
+        Vec yp_v = Vec::Load(p_ip, &m_y[ip]);
+        Vec zp_v = Vec::Load(p_ip, &m_z[ip]);
+
+        // int j = (int)((xp - xyzmin.x) * dinv.x) - 1;
+        // int k = (int)((yp - xyzmin.y) * dinv.y) - 1;
+        // int l = (int)((zp - xyzmin.z) * dinv.z) - 1;
+
+        Vec x = (xp_v - xyzmin.x) * dinv.x;
+        Vec y = (yp_v - xyzmin.y) * dinv.y;
+        Vec z = (zp_v - xyzmin.z) * dinv.z;
+
+        intVec j_nodev = svcvt_s64_f64_z(p_ip, x) - 1;
+        intVec k_nodev = svcvt_s64_f64_z(p_ip, y) - 1;
+        intVec l_nodev = svcvt_s64_f64_z(p_ip, z) - 1;
+        
+        // if (j < containlox || j > containhix || k < containloy || k > containhiy || l < containloz || l > containhiz)
+        // {
+        //     outside_particles[outside_particles_index] = ip;
+        //     outside_particles_index++;
+        // }
+
+        svbool_t p_is_lox_or_hix = svorr_b_z(p_ip, svcmplt_s64(p_ip, j_nodev, containlox_v), svcmpgt_s64(p_ip, j_nodev, containhix_v));
+        svbool_t p_is_loy_or_hiy = svorr_b_z(p_ip, svcmplt_s64(p_ip, k_nodev, containloy_v), svcmpgt_s64(p_ip, k_nodev, containhiy_v));
+        svbool_t p_is_loz_or_hiz = svorr_b_z(p_ip, svcmplt_s64(p_ip, l_nodev, containloz_v), svcmpgt_s64(p_ip, l_nodev, containhiz_v));
+
+        svbool_t p_is_outside = svorr_b_z(p_ip, p_is_lox_or_hix, p_is_loy_or_hiy);
+        p_is_outside = svorr_b_z(p_ip, p_is_outside, p_is_loz_or_hiz);
+
+        intVec ip_v = svindex_s64(ip, 1);
+        intVec ip_outside_v = svcompact_s64(p_is_outside, ip_v);
+        uint64_t num_outside = svcntp_b64(p_is_outside, p_is_outside);
+        if (num_outside > 0)
+        {
+            svbool_t p_outside = svwhilelt_b64(0ULL, num_outside);
+            svst1w(p_outside, outside_particles + outside_particles_index, ip_outside_v);
+            outside_particles_index += num_outside;
+        }
+    }
+
+    int tail = np_to_push - 1;
+    int tail_outside_index = outside_particles_index - 1;
+    while (tail_outside_index >= 0 && tail - outside_particles[tail_outside_index] < vl)
+    {
+        long ip = outside_particles[tail_outside_index];
+        ParticleReal m_x_tmp = m_x[ip];
+        ParticleReal m_y_tmp = m_y[ip];
+        ParticleReal m_z_tmp = m_z[ip];
+        ParticleReal ux_tmp = ux[ip];
+        ParticleReal uy_tmp = uy[ip];
+        ParticleReal uz_tmp = uz[ip];
+        ParticleReal wp_tmp = wp[ip];
+        
+        m_x[ip] = m_x[tail];
+        m_y[ip] = m_y[tail];
+        m_z[ip] = m_z[tail];
+        ux[ip] = ux[tail];
+        uy[ip] = uy[tail];
+        uz[ip] = uz[tail];
+        wp[ip] = wp[tail];
+
+        m_x[tail] = m_x_tmp;
+        m_y[tail] = m_y_tmp;
+        m_z[tail] = m_z_tmp;
+        ux[tail] = ux_tmp;
+        uy[tail] = uy_tmp;
+        uz[tail] = uz_tmp;
+        wp[tail] = wp_tmp;    
+        tail--;
+
+        tail_outside_index--;
+    }
+
+    while (tail_outside_index >= 0)
+    {
+        svbool_t p_ip = svwhilele_b64(0ULL, tail_outside_index);
+        uint64_t num_outside = svcntp_b64(p_ip, p_ip);
+
+        // printf("num_outside: %ld\n", num_outside);
+
+        intVec ip_v = svld1sw_s64(p_ip, outside_particles + tail_outside_index - num_outside + 1);
+        Vec m_x_outside_v = svld1_gather_index(p_ip, m_x, ip_v);
+        Vec m_y_outside_v = svld1_gather_index(p_ip, m_y, ip_v);
+        Vec m_z_outside_v = svld1_gather_index(p_ip, m_z, ip_v);
+        Vec ux_outside_v = svld1_gather_index(p_ip, ux, ip_v);
+        Vec uy_outside_v = svld1_gather_index(p_ip, uy, ip_v);
+        Vec uz_outside_v = svld1_gather_index(p_ip, uz, ip_v);
+        Vec wp_outside_v = svld1_gather_index(p_ip, wp, ip_v);
+        
+        Vec m_x_inside_v = Vec::Load(p_ip, m_x + tail - num_outside + 1);
+        Vec m_y_inside_v = Vec::Load(p_ip, m_y + tail - num_outside + 1);
+        Vec m_z_inside_v = Vec::Load(p_ip, m_z + tail - num_outside + 1);
+        Vec ux_inside_v = Vec::Load(p_ip, ux + tail - num_outside + 1);
+        Vec uy_inside_v = Vec::Load(p_ip, uy + tail - num_outside + 1);
+        Vec uz_inside_v = Vec::Load(p_ip, uz + tail - num_outside + 1);
+        Vec wp_inside_v = Vec::Load(p_ip, wp + tail - num_outside + 1);
+
+        m_x_outside_v.Store(p_ip, m_x + tail - num_outside + 1);
+        m_y_outside_v.Store(p_ip, m_y + tail - num_outside + 1);
+        m_z_outside_v.Store(p_ip, m_z + tail - num_outside + 1);
+        ux_outside_v.Store(p_ip, ux + tail - num_outside + 1);
+        uy_outside_v.Store(p_ip, uy + tail - num_outside + 1);
+        uz_outside_v.Store(p_ip, uz + tail - num_outside + 1);
+        wp_outside_v.Store(p_ip, wp + tail - num_outside + 1);
+
+        tail -= num_outside;
+        svst1_scatter_index(p_ip, m_x, ip_v, m_x_inside_v);
+        svst1_scatter_index(p_ip, m_y, ip_v, m_y_inside_v);
+        svst1_scatter_index(p_ip, m_z, ip_v, m_z_inside_v);
+        svst1_scatter_index(p_ip, ux, ip_v, ux_inside_v);
+        svst1_scatter_index(p_ip, uy, ip_v, uy_inside_v);
+        svst1_scatter_index(p_ip, uz, ip_v, uz_inside_v);
+        svst1_scatter_index(p_ip, wp, ip_v, wp_inside_v);
+
+        tail_outside_index -= num_outside;
+    }
+
+    int& g_new_particles_begin = ptile.g_new_particles_begin;
+    g_new_particles_begin = tail + 1;
+
+    const int MyProc = ParallelContext::MyProcSub();
+    const auto local_index = pti.GetPairIndex();
+    const int local_grid = local_index.first;
+    const int local_tile = local_index.second;
+
+    const int superparticle_size = WarpX::GetInstance().superparticle_size;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;        // 维度：[thread_id, who]: realdata，每7个一组
+
+    for (long ip = g_new_particles_begin; ip < np_to_push; ip++)
+    {
+        ParticleLocData pld;
+
+        Particle<0, 0> p_prime;
+        p_prime.pos(0) = m_x[ip];
+        p_prime.pos(1) = m_y[ip];
+        p_prime.pos(2) = m_z[ip];
+
+        ParticleReal& xp = p_prime.pos(0);
+        ParticleReal& yp = p_prime.pos(1);
+        ParticleReal& zp = p_prime.pos(2);
+
+        my_locateParticle(pti, pld, p_prime, lev, local_grid);
+
+        const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
+        if (who == MyProc)
+        {
+            // // 同一个进程内的数据，直接获得ptile，然后打包进接收区即可
+            DefineAndReturnParticleTile(lev, pld.m_grid, pld.m_tile);       // 检查tile是否存在，若不存在，则创建（本测例应该不会出现这种情况）
+            auto& local_recv_ptile = ParticlesAt(lev, pld.m_grid, pld.m_tile);
+            std::vector<uint64_t>& local_recv_idcpu = local_recv_ptile.local_recv_idcpu[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_xp = local_recv_ptile.local_recv_xp[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_yp = local_recv_ptile.local_recv_yp[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_zp = local_recv_ptile.local_recv_zp[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_ux = local_recv_ptile.local_recv_ux[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_uy = local_recv_ptile.local_recv_uy[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_uz = local_recv_ptile.local_recv_uz[thread_num];
+            std::vector<amrex::ParticleReal>& local_recv_w = local_recv_ptile.local_recv_w[thread_num];
+            local_recv_idcpu.push_back(soa.GetIdCPUData()[ip]);
+            local_recv_xp.push_back(xp);
+            local_recv_yp.push_back(yp);
+            local_recv_zp.push_back(zp);
+            local_recv_ux.push_back(ux[ip]);
+            local_recv_uy.push_back(uy[ip]);
+            local_recv_uz.push_back(uz[ip]);
+            local_recv_w.push_back(wp[ip]);
+        }
+        else
+        {
+            
+            size_t old_size = unr_send_buffer.size_who(who, thread_num);
+            size_t new_size = old_size + superparticle_size;
+            unr_send_buffer.resize_who(who, thread_num, new_size);
+
+            char* dst = (char*)unr_send_buffer.get_who_data_buffer(who, thread_num) + old_size;
+
             
             std::memcpy(dst, &soa.GetIdCPUData()[ip], sizeof(uint64_t));
             dst += sizeof(uint64_t);

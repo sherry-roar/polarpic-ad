@@ -115,11 +115,17 @@ public:
 
     void fusion_Isend_and_Irecv();
 
+    void fusion_unr_put();
+
     void fusion_local_collect(int lev);
 
     void fusion_remote_collect(int lev);
 
+    void fusion_unr_remote_collect(int lev);
+
     void fusion_test(int lev);
+
+    void fusion_unr_test(int lev);
 
     /**
     * \brief This pushes the particle positions by one time step for all the species in the

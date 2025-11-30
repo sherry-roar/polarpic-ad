@@ -679,6 +679,16 @@ MultiParticleContainer::fusion_Isend_and_Irecv()
 }
 
 void
+MultiParticleContainer::fusion_unr_put()
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_unr_put();
+        }
+    }
+}
+
+void
 MultiParticleContainer::fusion_local_collect(int lev)
 {
     for (auto& pc : allcontainers) {
@@ -699,11 +709,31 @@ MultiParticleContainer::fusion_remote_collect(int lev)
 }
 
 void
+MultiParticleContainer::fusion_unr_remote_collect(int lev)
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_unr_remote_collect(lev);
+        }
+    }
+}
+
+void
 MultiParticleContainer::fusion_test(int lev)
 {
     for (auto& pc : allcontainers) {
         if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
             phys->fusion_test(lev);
+        }
+    }
+}
+
+void
+MultiParticleContainer::fusion_unr_test(int lev)
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_unr_test(lev);
         }
     }
 }

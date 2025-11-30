@@ -440,15 +440,33 @@ public:
                          long np_to_push,
                          int lev, int gather_lev);
 
+    virtual void fusion_pack_unr(WarpXParIter& pti,
+                         amrex::IntVect ngEB,
+                         long offset,
+                         long np_to_push,
+                         int lev, int gather_lev);
+
     virtual void my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(int lev, int nghost);
 
+    virtual void UNR_WarpX_buffer_reg();
+
+    virtual void UNR_WarpX_blk_sync();
+
+    virtual void UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev, int nghost);
+
     virtual void fusion_Isend_and_Irecv();
+
+    virtual void fusion_unr_put();
 
     virtual void fusion_local_collect(int lev);
 
     virtual void fusion_remote_collect(int lev);
 
+    virtual void fusion_unr_remote_collect(int lev);
+
     virtual void fusion_test(int lev);
+
+    virtual void fusion_unr_test(int lev);
 
     void ImplicitPushXP (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,
