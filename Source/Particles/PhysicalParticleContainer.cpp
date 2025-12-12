@@ -2654,8 +2654,7 @@ PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps
     // 如果做全局通信，则为每个进程都做线程安全分配
     if (nghost <= 0)
     {
-        std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = WarpX::GetInstance().
-        remote_send_allcomps;
+        std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = WarpX::GetInstance().remote_send_allcomps;
         int max_threads = omp_get_max_threads();
         for (int i = 0; i < ParallelContext::NProcsSub(); ++i) {
             remote_send_allcomps[i].resize(max_threads);
@@ -2758,7 +2757,7 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     unr_send_count_buffer_mem_size = neigubor_proc_num * max_threads * sizeof(long);        // 每个邻居进程的每个线程都要一个 "数据量" 缓冲区
     unr_send_count_buffer_blk_size = sizeof(long);                                        // 每个 "数据量" 缓冲区的大小
 
-    unr_send_data_buffer_mem_size = num_tiles * m_init_np * sizeof(amrex::ParticleReal);    // 预留的大小为每个 tile 一个 np 大小的缓冲区
+    unr_send_data_buffer_mem_size = 2 * num_tiles * m_init_np * sizeof(amrex::ParticleReal);    // 预留的大小为每个 tile 一个 np 大小的缓冲区
     unr_send_data_buffer_blk_size = unr_send_data_buffer_mem_size / neigubor_proc_num / max_threads;    // 将 mem 平分为每个邻居进程的每个线程一个缓冲区
 
     unr_mem_alloc_reg(&unr_send_count_buffer, unr_send_count_buffer_mem_size, &unr_send_count_buffer_mem_h);
@@ -2778,7 +2777,7 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     unr_recv_count_buffer_mem_size = neigubor_proc_num * max_threads * sizeof(long);
     unr_recv_count_buffer_blk_size = sizeof(long);
     
-    unr_recv_data_buffer_mem_size = num_tiles * m_init_np * sizeof(amrex::ParticleReal);
+    unr_recv_data_buffer_mem_size = 2 * num_tiles * m_init_np * sizeof(amrex::ParticleReal);
     unr_recv_data_buffer_blk_size = unr_recv_data_buffer_mem_size / neigubor_proc_num / max_threads;
 
     unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_buffer_mem_h);
@@ -3266,7 +3265,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
                                 ParallelContext::CommunicatorSub()).req();
         sreqs.push_back(sreq);
 
-        printf("From %d to %d: send %d bytes\n", ParallelDescriptor::MyProc(), Who, Cnt * sizeof(buffer_type));
+        // printf("From %d to %d: send %d bytes\n", ParallelDescriptor::MyProc(), Who, Cnt * sizeof(buffer_type));
     }
 
     BL_PROFILE_VAR_STOP(blp_Send_And_Recv);
@@ -3275,6 +3274,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
 void
 PhysicalParticleContainer::fusion_unr_put()
 {
+    BL_PROFILE("UNR::fusion_unr_put");
     WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
     WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
     WarpX::UNR_WarpX_rmt_blk& unr_rmt_blk = WarpX::GetInstance().unr_rmt_blk;
@@ -3363,7 +3363,7 @@ PhysicalParticleContainer::fusion_unr_put()
 
     // unr_blk_part_rdma_batch_start(send_data_blk_num, loc_data_blk_h.data(), loc_data_sig_h.data(), loc_data_offset.data(), loc_data_size.data(), rmt_data_blk_h.data(), rmt_data_sig_h.data(), rmt_data_offset.data(), dma_data_type.data());
 
-    // sdma 同时发送 "数据量" 和 "数据"，到自适应远程块
+    // rdma 同时发送 "数据量" 和 "数据"，到自适应远程块
     std::vector<unr_blk_h> loc_blk_h;
     std::vector<unr_sig_h> loc_sig_h;
     std::vector<size_t> loc_offset;
@@ -3452,7 +3452,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
             }
         }
 
-        printf("Send completed after %d polls\n", send_polls);
+        // printf("Send completed after %d polls\n", send_polls);
 
         // BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
         BL_PROFILE_VAR_STOP(blp_waitall);
@@ -3477,7 +3477,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
             }
         }
 
-        printf("Recv completed after %d polls\n", recv_polls);
+        // printf("Recv completed after %d polls\n", recv_polls);
 
         // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), rstats.data()) );
         BL_PROFILE_VAR_STOP(blp_waitall);
@@ -3597,6 +3597,7 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
 void
 PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
 {
+    BL_PROFILE("UNR::fusion_unr_remote_collect");
     WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
     WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
     amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
@@ -4804,8 +4805,10 @@ PhysicalParticleContainer::Evolve (int lev,
         }
     }
 
-    printf("Run UNROLL_OMP\n");
-    fusion_Isend_and_Irecv();
+    if (!is_last_step) {
+        amrex::Print() << "Run UNROLL_OMP\n";
+        fusion_Isend_and_Irecv();
+    }
 
     #pragma omp parallel
     {
@@ -4838,7 +4841,7 @@ PhysicalParticleContainer::Evolve (int lev,
     }
 
     if (!is_last_step) {
-        printf("Run UNROLL_OMP_UNR\n");
+        amrex::Print() << "Run UNROLL_OMP_UNR\n";
         fusion_unr_put();
     }
 
@@ -10165,7 +10168,7 @@ __arm_new("za") inline void PushPX_sve_sme_physort_order3_kernel(
     }
 
     g_move_begin = move_idx;
-    printf("np_to_push: %ld, nomove_idx: %d, move_idx: %d\n", np_to_push, nomove_idx, move_idx);
+    // printf("np_to_push: %ld, nomove_idx: %d, move_idx: %d\n", np_to_push, nomove_idx, move_idx);
 }
 
 void
@@ -11064,7 +11067,7 @@ PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
         const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
         if (who == MyProc)
         {
-            // // 同一个进程内的数据，直接获得ptile，然后打包进接收区即可
+            // 同一个进程内的数据，直接获得ptile，然后打包进接收区即可
             DefineAndReturnParticleTile(lev, pld.m_grid, pld.m_tile);       // 检查tile是否存在，若不存在，则创建（本测例应该不会出现这种情况）
             auto& local_recv_ptile = ParticlesAt(lev, pld.m_grid, pld.m_tile);
             std::vector<uint64_t>& local_recv_idcpu = local_recv_ptile.local_recv_idcpu[thread_num];
@@ -11086,13 +11089,11 @@ PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
         }
         else
         {
-            
             size_t old_size = unr_send_buffer.size_who(who, thread_num);
             size_t new_size = old_size + superparticle_size;
             unr_send_buffer.resize_who(who, thread_num, new_size);
 
             char* dst = (char*)unr_send_buffer.get_who_data_buffer(who, thread_num) + old_size;
-
             
             std::memcpy(dst, &soa.GetIdCPUData()[ip], sizeof(uint64_t));
             dst += sizeof(uint64_t);

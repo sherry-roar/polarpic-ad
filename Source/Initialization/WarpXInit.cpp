@@ -14,6 +14,7 @@
 #include <ablastr/math/fft/AnyFFT.H>
 #include <ablastr/parallelization/MPIInitHelpers.H>
 #include <unr.h>
+#include <AMReX_Print.H>
 
 void warpx::initialization::initialize_external_libraries(int argc, char* argv[])
 {
@@ -22,15 +23,14 @@ void warpx::initialization::initialize_external_libraries(int argc, char* argv[]
     ablastr::math::anyfft::setup();
 
 #ifdef UNROLL_OMP_UNR
-    printf("Initializing UNR...\n");
     unr_init();
+    amrex::Print() << "UNR initialized\n";
 #endif
 }
 
 void warpx::initialization::finalize_external_libraries()
 {
 #ifdef UNROLL_OMP_UNR
-    printf("Finalizing UNR...\n");
     unr_finalize();
 #endif
 

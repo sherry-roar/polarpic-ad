@@ -569,11 +569,12 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
 #endif
 
 #ifdef FUSION_TEST
-    printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
     if (!is_last_step) {
 #if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
+        printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
         mypc->fusion_test(finest_level);
 #elif defined(UNROLL_OMP_UNR)
+        printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_UNR_TEST\n");
         mypc->fusion_unr_test(finest_level);
 #endif
     }
