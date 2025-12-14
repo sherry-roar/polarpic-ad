@@ -117,6 +117,10 @@ public:
 
     void fusion_unr_put();
 
+    void fusion_wait();
+
+    void fusion_unr_wait();
+
     void fusion_local_collect(int lev);
 
     void fusion_remote_collect(int lev);

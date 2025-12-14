@@ -565,6 +565,10 @@ public:
         
         void resize_who(int who, int thread_id, size_t size)
         {
+            if (size > data_buffer_blk_size)
+            {
+                amrex::Abort("Error: Requested buffer size exceeds the allocated buffer capacity.");
+            }
             std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
             int who_idx = who_to_idx[who];
             data_size[who_idx][thread_id] = size;
@@ -579,6 +583,10 @@ public:
 
         void resize_whoidx(int who_idx, int thread_id, size_t size)
         {
+            if (size > data_buffer_blk_size)
+            {
+                amrex::Abort("Error: Requested buffer size exceeds the allocated buffer capacity.");
+            }
             data_size[who_idx][thread_id] = size;
         }
 

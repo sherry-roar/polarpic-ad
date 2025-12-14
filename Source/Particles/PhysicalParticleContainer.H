@@ -458,6 +458,10 @@ public:
 
     virtual void fusion_unr_put();
 
+    virtual void fusion_wait();
+
+    virtual void fusion_unr_wait();
+
     virtual void fusion_local_collect(int lev);
 
     virtual void fusion_remote_collect(int lev);

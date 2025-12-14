@@ -689,6 +689,26 @@ MultiParticleContainer::fusion_unr_put()
 }
 
 void
+MultiParticleContainer::fusion_wait()
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_wait();
+        }
+    }
+}
+
+void
+MultiParticleContainer::fusion_unr_wait()
+{
+    for (auto& pc : allcontainers) {
+        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
+            phys->fusion_unr_wait();
+        }
+    }
+}
+
+void
 MultiParticleContainer::fusion_local_collect(int lev)
 {
     for (auto& pc : allcontainers) {

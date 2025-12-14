@@ -3419,25 +3419,18 @@ PhysicalParticleContainer::fusion_unr_put()
 }
 
 void
-PhysicalParticleContainer::fusion_remote_collect(int lev)
+PhysicalParticleContainer::fusion_wait()
 {
-    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Waitall", blp_waitall);
-    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Locate", blp_locate);
-    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Copy", blp_copy);
-    const int superparticle_size = WarpX::GetInstance().superparticle_size;
+    BL_PROFILE("MyRedistributeMPI::fusion_wait");
 
     std::vector<long>& Rcvs = WarpX::GetInstance().Rcvs;
     std::vector<int>& RcvProc = WarpX::GetInstance().RcvProc;
-    std::vector<std::size_t>& rOffset = WarpX::GetInstance().rOffset;
-    std::size_t& TotRcvBytes = WarpX::GetInstance().TotRcvBytes;
     Vector<MPI_Request>& rreqs = WarpX::GetInstance().rreqs;
     Vector<MPI_Request>& sreqs = WarpX::GetInstance().sreqs;
-    Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
     const auto nrcvs = static_cast<int>(RcvProc.size());
     const auto nsnds = static_cast<int>(sreqs.size());
 
     if (nsnds > 0) {
-        BL_PROFILE_VAR_START(blp_waitall);
         Vector<MPI_Status>  sstats(sreqs.size());
         int send_completed = 0;
         int send_polls = 0;
@@ -3455,11 +3448,9 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
         // printf("Send completed after %d polls\n", send_polls);
 
         // BL_MPI_REQUIRE( MPI_Waitall(sreqs.size(), sreqs.data(), sstats.data()) );
-        BL_PROFILE_VAR_STOP(blp_waitall);
     }
 
     if (nrcvs > 0) {
-        BL_PROFILE_VAR_START(blp_waitall);
         Vector<MPI_Status>  rstats(nrcvs);
         // ParallelDescriptor::Waitall(rreqs, rstats);
         
@@ -3478,9 +3469,93 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
         }
 
         // printf("Recv completed after %d polls\n", recv_polls);
+    }
+}
 
-        // BL_MPI_REQUIRE( MPI_Waitall(rreqs.size(), rreqs.data(), rstats.data()) );
-        BL_PROFILE_VAR_STOP(blp_waitall);
+void
+PhysicalParticleContainer::fusion_unr_wait()
+{
+    BL_PROFILE("UNR::fusion_unr_wait");
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+    int step = WarpX::GetInstance().step;
+
+    int max_threads = omp_get_max_threads();
+    int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
+
+    // for (int i = 0; i < neigubor_proc_num; ++i) {
+    //     int who_idx = i;
+    //     for (int j = 0; j < max_threads; ++j) {
+    //         long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         long send_buffer_size = *send_count_buffer;
+    //         long* recv_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
+    //         long recv_buffer_size = *recv_count_buffer;
+
+    //         if (send_buffer_size > 0) {
+    //             unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //             unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //         }
+
+    //         if (recv_buffer_size > 0) {
+    //             unr_sig_wait(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //             unr_sig_reset(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
+    //         }
+    //     }
+    // }
+
+    for (int i = 0; i < neigubor_proc_num; ++i) {
+        int who_idx = i;
+
+        // 先等待 "数据量"
+        for (int j = 0; j < max_threads; ++j) {
+            // 先等发送
+            unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+            unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
+
+            // 后等接收
+            unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
+            unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
+        }
+
+        // 后等待 "数据"
+        for (int j = 0; j < max_threads; ++j) {
+            long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
+            long send_buffer_size = *send_count_buffer;
+            long* recv_count_buffer = (long*)unr_recv_buffer.adaptive_get_whoidx_count_buffer(who_idx, j, step);
+            long recv_buffer_size = *recv_count_buffer;
+
+            if (send_buffer_size > 0) {
+                unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+                unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
+            }
+
+            if (recv_buffer_size > 0) {
+                unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
+                unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
+            }
+        }
+    }
+}
+
+void
+PhysicalParticleContainer::fusion_remote_collect(int lev)
+{
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Locate", blp_locate);
+    BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Copy", blp_copy);
+    const int superparticle_size = WarpX::GetInstance().superparticle_size;
+
+    std::vector<long>& Rcvs = WarpX::GetInstance().Rcvs;
+    std::vector<int>& RcvProc = WarpX::GetInstance().RcvProc;
+    std::vector<std::size_t>& rOffset = WarpX::GetInstance().rOffset;
+    std::size_t& TotRcvBytes = WarpX::GetInstance().TotRcvBytes;
+    Vector<MPI_Request>& rreqs = WarpX::GetInstance().rreqs;
+    Vector<MPI_Request>& sreqs = WarpX::GetInstance().sreqs;
+    Vector<unsigned long long>& recvdata = WarpX::GetInstance().recvdata;
+    const auto nrcvs = static_cast<int>(RcvProc.size());
+    const auto nsnds = static_cast<int>(sreqs.size());
+
+    if (nrcvs > 0) {
         BL_PROFILE_VAR_START(blp_locate);
 
         int npart = TotRcvBytes / superparticle_size;       // 计算有多少个粒子
@@ -3606,59 +3681,6 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
 
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
-
-    // for (int i = 0; i < neigubor_proc_num; ++i) {
-    //     int who_idx = i;
-    //     for (int j = 0; j < max_threads; ++j) {
-    //         long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
-    //         long send_buffer_size = *send_count_buffer;
-    //         long* recv_count_buffer = (long*)unr_recv_buffer.get_whoidx_count_buffer(who_idx, j);
-    //         long recv_buffer_size = *recv_count_buffer;
-
-    //         if (send_buffer_size > 0) {
-    //             unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
-    //             unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
-    //         }
-
-    //         if (recv_buffer_size > 0) {
-    //             unr_sig_wait(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
-    //             unr_sig_reset(unr_recv_buffer.get_whoidx_data_sig_h(who_idx, j));
-    //         }
-    //     }
-    // }
-
-    for (int i = 0; i < neigubor_proc_num; ++i) {
-        int who_idx = i;
-
-        // 先等待 "数据量"
-        for (int j = 0; j < max_threads; ++j) {
-            // 先等发送
-            unr_sig_wait(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
-            unr_sig_reset(unr_send_buffer.get_whoidx_count_sig_h(who_idx, j));
-
-            // 后等接收
-            unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
-            unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_count_sig_h(who_idx, j, step));
-        }
-
-        // 后等待 "数据"
-        for (int j = 0; j < max_threads; ++j) {
-            long* send_count_buffer = (long*)unr_send_buffer.get_whoidx_count_buffer(who_idx, j);
-            long send_buffer_size = *send_count_buffer;
-            long* recv_count_buffer = (long*)unr_recv_buffer.adaptive_get_whoidx_count_buffer(who_idx, j, step);
-            long recv_buffer_size = *recv_count_buffer;
-
-            if (send_buffer_size > 0) {
-                unr_sig_wait(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
-                unr_sig_reset(unr_send_buffer.get_whoidx_data_sig_h(who_idx, j));
-            }
-
-            if (recv_buffer_size > 0) {
-                unr_sig_wait(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
-                unr_sig_reset(unr_recv_buffer.adaptive_get_whoidx_data_sig_h(who_idx, j, step));
-            }
-        }
-    }
 
     std::vector<int> rcv_grid;
     std::vector<int> rcv_tile;
@@ -4939,6 +4961,16 @@ PhysicalParticleContainer::Evolve (int lev,
         fusion_Isend_and_Irecv();
     }
 #endif  // FIELD_OVERLAP
+
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+    if (!is_last_step) {
+#if defined(UNROLL_OMP)
+        fusion_wait();
+#elif defined(UNROLL_OMP_UNR)
+        fusion_unr_wait();
+#endif
+    }
+#endif
 }
 
 void
