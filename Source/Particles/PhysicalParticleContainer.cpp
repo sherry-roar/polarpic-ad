@@ -4673,6 +4673,9 @@ PhysicalParticleContainer::Evolve (int lev,
                     //     double ux_err = fabs(ux_test[ip] - ux[ip]) / fabs(ux_test[ip]);
                     //     double uy_err = fabs(uy_test[ip] - uy[ip]) / fabs(uy_test[ip]);
                     //     double uz_err = fabs(uz_test[ip] - uz[ip]) / fabs(uz_test[ip]);
+                    //     double mx_err = fabs(m_x_test[ip] - m_x[ip]) / fabs(m_x_test[ip]);
+                    //     double my_err = fabs(m_y_test[ip] - m_y[ip]) / fabs(m_y_test[ip]);
+                    //     double mz_err = fabs(m_z_test[ip] - m_z[ip]) / fabs(m_z_test[ip]);
 
                     //     if (ux_err > 1e-8)
                     //     {
@@ -4689,6 +4692,22 @@ PhysicalParticleContainer::Evolve (int lev,
                     //         printf("uz_err: %lf\n", uz_err);
                     //         amrex::Abort("uz_err");
                     //     }
+
+                    //     if (mx_err > 1e-8)
+                    //     {
+                    //         printf("mx_err: %lf\n", mx_err);
+                    //         amrex::Abort("mx_err");
+                    //     }
+                    //     if (my_err > 1e-8)
+                    //     {
+                    //         printf("my_err: %lf\n", my_err);
+                    //         amrex::Abort("my_err");
+                    //     }
+                    //     if (mz_err > 1e-8)
+                    //     {
+                    //         printf("mz_err: %lf\n", mz_err);
+                    //         amrex::Abort("mz_err");
+                    //     }
                     // }
 
                     for (long ip = 0; ip < np_to_push; ++ip)
@@ -4696,14 +4715,20 @@ PhysicalParticleContainer::Evolve (int lev,
                         double ux_err = 1;
                         double uy_err = 1;
                         double uz_err = 1;
+                        double mx_err = 1;
+                        double my_err = 1;
+                        double mz_err = 1;
                         // printf("%d ", ip);
                         for (long test_ip = 0; test_ip < np_to_push; ++test_ip)
                         {
                             ux_err = fabs(ux_test[test_ip] - ux[ip]) / fabs(ux_test[test_ip]);
                             uy_err = fabs(uy_test[test_ip] - uy[ip]) / fabs(uy_test[test_ip]);
                             uz_err = fabs(uz_test[test_ip] - uz[ip]) / fabs(uz_test[test_ip]);
+                            mx_err = fabs(m_x_test[test_ip] - m_x[ip]) / fabs(m_x_test[test_ip]);
+                            my_err = fabs(m_y_test[test_ip] - m_y[ip]) / fabs(m_y_test[test_ip]);
+                            mz_err = fabs(m_z_test[test_ip] - m_z[ip]) / fabs(m_z_test[test_ip]);
 
-                            if (ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8)
+                            if (ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8 && mx_err < 1e-8 && my_err < 1e-8 && mz_err < 1e-8)
                             {
                                 break;
                             }
@@ -5652,9 +5677,9 @@ PhysicalParticleContainer::PushPX_test (const WarpXParIter& pti,
                                    const long np_to_push,
                                    int lev, int gather_lev,
                                    amrex::Real dt, ScaleFields scaleFields,
-                                   std::vector<amrex::ParticleReal> m_x_test,
-                                   std::vector<amrex::ParticleReal> m_y_test,
-                                   std::vector<amrex::ParticleReal> m_z_test,
+                                   std::vector<amrex::ParticleReal>& m_x_test,
+                                   std::vector<amrex::ParticleReal>& m_y_test,
+                                   std::vector<amrex::ParticleReal>& m_z_test,
                                    amrex::ParticleReal* const ux_test,
                                    amrex::ParticleReal* const uy_test,
                                    amrex::ParticleReal* const uz_test,
@@ -6099,9 +6124,9 @@ PhysicalParticleContainer::PushPX_baseline_order3_test (WarpXParIter& pti,
                                    const long np_to_push,
                                    int lev, int gather_lev,
                                    amrex::Real dt, ScaleFields scaleFields,
-                                   std::vector<amrex::ParticleReal> m_x_test,
-                                   std::vector<amrex::ParticleReal> m_y_test,
-                                   std::vector<amrex::ParticleReal> m_z_test,
+                                   std::vector<amrex::ParticleReal>& m_x_test,
+                                   std::vector<amrex::ParticleReal>& m_y_test,
+                                   std::vector<amrex::ParticleReal>& m_z_test,
                                    amrex::ParticleReal* const ux_test,
                                    amrex::ParticleReal* const uy_test,
                                    amrex::ParticleReal* const uz_test,
