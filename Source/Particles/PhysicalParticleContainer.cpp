@@ -4621,7 +4621,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_MICRO_ORDER3
 
 #ifdef PUSH_SVE_SME_LARGE_ORDER3
-                    // printf("RUN PUSH_SVE_SME_LARGE_ORDER3\n");
+                    printf("RUN PUSH_SVE_SME_LARGE_ORDER3\n");
                     PushPX_sve_sme_large_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4664,9 +4664,12 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 
 #ifdef PUSH_TEST_ORDER3
-                    const ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr();
-                    const ParticleReal* const AMREX_RESTRICT uy = attribs[PIdx::uy].dataPtr();
-                    const ParticleReal* const AMREX_RESTRICT uz = attribs[PIdx::uz].dataPtr();
+                    m_x = soa.GetRealData(PIdx::x).dataPtr();
+                    m_y = soa.GetRealData(PIdx::y).dataPtr();
+                    m_z = soa.GetRealData(PIdx::z).dataPtr();
+                    const amrex::ParticleReal* ux = attribs[PIdx::ux].dataPtr();
+                    const amrex::ParticleReal* uy = attribs[PIdx::uy].dataPtr();
+                    const amrex::ParticleReal* uz = attribs[PIdx::uz].dataPtr();
 
                     // for (long ip = 0; ip < np_to_push; ++ip)
                     // {
@@ -4748,6 +4751,21 @@ PhysicalParticleContainer::Evolve (int lev,
                         {
                             printf("uz_err: %lf", uz_err);
                             amrex::Abort("uz_err");
+                        }
+                        if (mx_err > 1e-8)
+                        {
+                            printf("mx_err: %lf", mx_err);
+                            amrex::Abort("mx_err");
+                        }
+                        if (my_err > 1e-8)
+                        {
+                            printf("my_err: %lf", my_err);
+                            amrex::Abort("my_err");
+                        }
+                        if (mz_err > 1e-8)
+                        {
+                            printf("mz_err: %lf", mz_err);
+                            amrex::Abort("mz_err");
                         }
                     }
 
