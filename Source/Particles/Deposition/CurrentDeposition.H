@@ -11001,6 +11001,622 @@ void doDepositionShapeN_sve_rhocell_sme_large_order3_test (const GetParticlePosi
 }
 
 using ParticleTileType = typename WarpXParticleContainer::ParticleTileType;
+
+inline void increment_sort_deposit(ParticleTileType& ptile, 
+                                   int* newbin, long np, int lenx, int leny, int lenz, 
+                                   vector<vector<int>>& outside_bin_ip)
+{
+    // 增量排序
+    vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
+    std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
+    vector<int>& d_local_index = ptile.d_local_index;
+    std::vector<int>& d_old_outside_index = ptile.d_old_outside_index;
+    int& d_old_np = ptile.d_old_np;
+
+    int thread_num = omp_get_thread_num();
+    int m_init_np = WarpX::GetInstance().m_init_np;
+    int* pending_moves = WarpX::GetInstance().pending_moves + thread_num * m_init_np;
+    int pending_moves_num = 0;
+    int num_bins = lenx * leny * lenz;
+
+    int vlf = svcntw();
+    svint32_t np_v = svdup_n_s32(np);
+    svint32_t invalid_particle_id_v = svdup_n_s32(ParticleTileType::INVALID_PARTICLE_ID);
+
+    // Stage 1: Process Newly Added Particles
+    for (int ip = d_old_np; ip < np; ip += vlf)
+    {
+        svbool_t p_ip = svwhilelt_b32(ip, (int32_t)np);
+        svint32_t ip_v = svindex_s32(ip, 1);
+        int32_t ip_num = svcntp_b32(p_ip, p_ip);
+        svst1_s32(p_ip, pending_moves + pending_moves_num, ip_v);
+        pending_moves_num += ip_num;
+    }
+
+    // for (int ip = d_old_np; ip < np; ++ip)
+    // {
+    //     pending_moves[pending_moves_num++] = ip;
+    // }
+
+    // Stage 2 & 3.1: Identify Moved Existing Particles and Delete From Old Cell
+    // 从 d_old_outside_index 遍历超出 realbox 的粒子，这些粒子必定为移动粒子
+    for (int i = 0; i < d_old_outside_index.size(); ++i)
+    {
+        int ip = d_old_outside_index[i];
+
+        if (ip >= np)
+        {
+            continue;
+        }
+        else
+        {
+            pending_moves[pending_moves_num++] = ip;
+        }
+    }
+
+    // 从 d_local_index 遍历 realbox 内的粒子，这些粒子可能为移动粒子
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int& oldbin_offset = d_incr_bin_offset[old_bin];
+                int& oldbin_length = d_incr_bin_length[old_bin];
+
+                svint32_t old_bin_v = svdup_n_s32(old_bin);
+
+                // 如果 oldbin_offset 为 -1，说明粒子不在 realbox 内
+                if (oldbin_offset == -1)
+                {
+                    continue;
+                }
+
+                int* invalid_idx = WarpX::GetInstance().invalid_idx + thread_num * m_init_np;
+                int invalid_num = 0;
+
+                // 将无效粒子直接删除，将有效但移动的粒子压入 pending_moves 中，同时维护 invalid_idx 用于标记哪些位置是无效的
+                for (int i = 0; i < oldbin_length; i += vlf)
+                {
+                    // ========== Step 1: 加载数据 ==========
+                    svbool_t p_ip = svwhilelt_b32(i, oldbin_length);
+                    int idx = oldbin_offset + i;
+                    svint32_t idx_v = svindex_s32(idx, 1);
+                    svint32_t ip_v = svld1_s32(p_ip, &d_local_index[idx]);
+                    
+                    // ========== Step 2: 识别无效粒子和需要移动的粒子 ==========
+                    // 标记无效粒子：ip >= np
+                    svbool_t ip_invalid = svcmpge_s32(p_ip, ip_v, np_v);
+                    
+                    // 从有效粒子中识别需要移动的粒子：newbin[ip] != old_bin
+                    svbool_t ip_valid = svbic_b_z(p_ip, p_ip, ip_invalid);
+                    svint32_t newbin_v = svld1_gather_s32index_s32(ip_valid, newbin, ip_v);
+                    svbool_t ip_move = svcmpne_s32(ip_valid, newbin_v, old_bin_v);
+                    
+                    // 合并条件：标记所有需要从当前 bin 移除的粒子
+                    // (无效粒子 OR 需要移动的粒子)
+                    svbool_t ip_to_remove = svorr_b_z(p_ip, ip_invalid, ip_move);
+
+                    // ========== Step 3: 处理需要移动的粒子 ==========
+                    // 将有效且需要移动的粒子索引压入 pending_moves
+                    int32_t ip_move_num = svcntp_b32(ip_valid, ip_move);
+                    if (ip_move_num > 0)
+                    {
+                        svbool_t p_move = svwhilelt_b32(0, ip_move_num);
+                        svint32_t move_ips_v = svcompact(ip_move, ip_v);
+                        svst1_s32(p_move, pending_moves + pending_moves_num, move_ips_v);
+                        pending_moves_num += ip_move_num;
+                    }
+
+                    // ========== Step 4: 标记需要移除的粒子位置 ==========
+                    // 将所有需要移除的粒子位置压入 invalid_idx，并标记为无效
+                    int32_t ip_to_remove_num = svcntp_b32(p_ip, ip_to_remove);
+                    if (ip_to_remove_num > 0)
+                    {
+                        svbool_t p_remove = svwhilelt_b32(0, ip_to_remove_num);
+                        svint32_t remove_idx_v = svcompact(ip_to_remove, idx_v);
+                        
+                        // 记录需要移除的位置索引
+                        svst1_s32(p_remove, invalid_idx + invalid_num, remove_idx_v);
+                        invalid_num += ip_to_remove_num;
+                        
+                        // 将这些位置标记为无效粒子ID
+                        svst1_scatter_s32index_s32(p_remove, d_local_index.data(), remove_idx_v, invalid_particle_id_v);
+                    }
+                }
+
+                // for (int i = 0; i < oldbin_length; ++i)
+                // {
+                //     int idx = oldbin_offset + i;
+                //     int ip = d_local_index[idx];
+
+                //     if (ip >= np)
+                //     {
+                //         invalid_idx[invalid_num++] = idx;
+                //         d_local_index[idx] = ParticleTileType::INVALID_PARTICLE_ID;     // TODO: 考虑删除这行冗余操作
+                //     }
+                //     else if (newbin[ip] != old_bin)
+                //     {
+                //         invalid_idx[invalid_num++] = idx;
+                //         d_local_index[idx] = ParticleTileType::INVALID_PARTICLE_ID;     // TODO: 考虑删除这行冗余操作
+                //         pending_moves[pending_moves_num++] = ip;
+                //     }                    
+                // }
+
+                // 从后往前填补无效的位置
+                int oldbin_tail = oldbin_offset + oldbin_length;
+                int invalid_tail = invalid_num - 1;
+
+                while (invalid_tail >= 0 && oldbin_tail - invalid_idx[invalid_tail] < vlf)
+                {
+                    int idx = invalid_idx[invalid_tail];
+                    oldbin_tail--;
+                    d_local_index[idx] = d_local_index[oldbin_tail];
+                    d_local_index[oldbin_tail] = ParticleTileType::INVALID_PARTICLE_ID;
+                    invalid_tail--;
+                }
+
+                while (invalid_tail >= 0)
+                {
+                    svbool_t p_ip = svwhilele_b32(0, invalid_tail);
+                    int32_t num_invalid = svcntp_b32(p_ip, p_ip);
+
+                    svint32_t idx_v = svld1_s32(p_ip, invalid_idx + invalid_tail + 1 - num_invalid);
+                    oldbin_tail -= num_invalid;
+                    svint32_t ip_v = svld1_s32(p_ip, d_local_index.data() + oldbin_tail);
+                    svst1_scatter_s32index_s32(p_ip, d_local_index.data(), idx_v, ip_v);
+                    svst1_s32(p_ip, d_local_index.data() + oldbin_tail, invalid_particle_id_v);
+                    invalid_tail -= num_invalid;
+                }
+
+                // for (int i = invalid_num - 1; i >= 0; --i)
+                // {
+                //     int idx = invalid_idx[i];
+                //     oldbin_tail--;
+ 
+                //     d_local_index[idx] = d_local_index[oldbin_tail];
+                //     d_local_index[oldbin_tail] = ParticleTileType::INVALID_PARTICLE_ID;
+                // }
+
+                oldbin_length = oldbin_tail - oldbin_offset;
+            }
+        }
+    }
+    
+    d_old_np = np;
+
+    d_old_outside_index.clear();
+
+    // Stage 3.2: Insert Operation
+    // 从 pending_moves 中遍历需要移动的粒子，将它们插入到新的 bin 中即可；rebuild 部分后续补充
+    for (int i = 0; i < pending_moves_num; ++i)
+    {
+        int ip = pending_moves[i];
+        int newbin_ip = newbin[ip];
+
+        if (d_incr_bin_offset[newbin_ip] == -1)
+        {
+            d_old_outside_index.push_back(ip);
+            outside_bin_ip[newbin_ip].push_back(ip);
+        }
+        else
+        {
+            int& newbin_offset = d_incr_bin_offset[newbin_ip];
+            int& newbin_length = d_incr_bin_length[newbin_ip];
+            int newbin_tail = newbin_offset + newbin_length;
+
+            if (newbin_tail >= newbin_offset + ptile.max_bin_length)
+            {
+                amrex::Abort("max_bin_length exceeded");
+            }
+
+            d_local_index[newbin_tail] = ip;
+            newbin_length++;
+        }
+    }
+
+    // vector<int> b_ips(np, 0);
+
+    // for (int l_node = 0; l_node < lenz; ++l_node)
+    // {
+    //     for (int k_node = 0; k_node < leny; ++k_node)
+    //     {
+    //         for (int j_node = 0; j_node < lenx; ++j_node)
+    //         {
+    //             int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+    //             int& oldbin_offset = d_incr_bin_offset[old_bin];
+    //             int& oldbin_length = d_incr_bin_length[old_bin];
+
+    //             int oldbin_outside_length = outside_bin_ip[old_bin].size();
+    //             vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+    //             if (oldbin_offset == -1)
+    //             {
+    //                 for (int i = 0; i < oldbin_outside_length; ++i)
+    //                 {
+    //                     int ip = oldbin_outside_particles[i];
+    //                     if (b_ips[ip] == 1)
+    //                     {
+    //                         amrex::Abort("[1]there are two same particles.");
+    //                     }
+
+    //                     if (newbin[ip] != old_bin)
+    //                     {
+    //                         amrex::Abort("[1]the particle is not in the same bin.");
+    //                     }
+
+    //                     b_ips[ip] = 1;
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 for (int i = 0; i < oldbin_length; ++i)
+    //                 {
+    //                     int idx = oldbin_offset + i;
+    //                     int ip = d_local_index[idx];
+    //                     if (b_ips[ip] == 1)
+    //                     {
+    //                         amrex::Abort("[2]there are two same particles.");
+    //                     }
+
+    //                     if (newbin[ip] != old_bin)
+    //                     {
+    //                         amrex::Abort("[2]the particle is not in the same bin.");
+    //                     }
+
+    //                     b_ips[ip] = 1;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+    // for (int i = 0; i < np; ++i)
+    // {
+    //     if (b_ips[i] == 0)
+    //     {
+    //         amrex::Abort("not cover all particles.");
+    //     }
+    // }
+}
+
+template <int depos_order>
+void doDepositionShapeN_sve_rhocell_incrsort_order3 (const GetParticlePosition<PIdx>& GetPosition,
+                        const amrex::ParticleReal * const wp,
+                        const amrex::ParticleReal * const uxp,
+                        const amrex::ParticleReal * const uyp,
+                        const amrex::ParticleReal * const uzp,
+                        const int* ion_lev,
+                        amrex::FArrayBox& jx_fab,
+                        amrex::FArrayBox& jy_fab,
+                        amrex::FArrayBox& jz_fab,
+                        long np_to_deposit,
+                        amrex::Real relative_time,
+                        const amrex::XDim3 & dinv,
+                        const amrex::XDim3 & xyzmin,
+                        amrex::Dim3 len,
+                        amrex::Real q,
+                        ParticleTileType& ptile,
+                        [[maybe_unused]]int n_rz_azimuthal_modes)
+{
+    using namespace amrex::literals;
+
+    const amrex::Real invvol = dinv.x*dinv.y*dinv.z;
+
+    const amrex::Real clightsq = 1.0_rt/PhysConst::c/PhysConst::c;
+
+    amrex::Array4<amrex::Real> const& jx_arr = jx_fab.array();
+    amrex::Array4<amrex::Real> const& jy_arr = jy_fab.array();
+    amrex::Array4<amrex::Real> const& jz_arr = jz_fab.array();
+    
+    constexpr int nshapes = 1 + 3;
+    const int block_size = 8;
+    const int vl = svcntd();
+
+    const amrex::ParticleReal* mx = GetPosition.m_x;
+    const amrex::ParticleReal* my = GetPosition.m_y;
+    const amrex::ParticleReal* mz = GetPosition.m_z;
+    
+    // 预计算网格步长
+    const int xjstride = jx_arr.jstride;
+    const int xkstride = jx_arr.kstride;
+
+    auto compute_shape_factor_part_sve_order3 = [](double* sx, Vec xmid, svbool_t p) {
+        Vec j = svrintz_x(p, xmid);
+        Vec xint = xmid - j;
+        Vec one_minus_xint = 1.0 - xint;
+
+        Vec sx0 = (1.0 / 6.0) * one_minus_xint * one_minus_xint * one_minus_xint;
+        sx0.Store(p, &sx[0 * block_size]);
+        Vec sx1 = (2.0 / 3.0) - xint * xint * (1.0 - xint * 0.5);
+        sx1.Store(p, &sx[1 * block_size]);
+        Vec sx2 = (2.0 / 3.0) - one_minus_xint * one_minus_xint * (1.0 - 0.5 *one_minus_xint);
+        sx2.Store(p, &sx[2 * block_size]);
+        Vec sx3 = (1.0 / 6.0) * xint * xint * xint;
+        sx3.Store(p, &sx[3 * block_size]);
+    };
+
+    std::vector<amrex::Real> wqx(block_size, 0.0);
+    std::vector<amrex::Real> wqy(block_size, 0.0);
+    std::vector<amrex::Real> wqz(block_size, 0.0);
+    double sx_m[nshapes * block_size] = {0.};
+    double sy_m[nshapes * block_size] = {0.};
+    double sz_m[nshapes * block_size] = {0.};
+
+    const int lenx = len.x;
+    const int leny = len.y;
+    const int lenz = len.z;
+    const int nrho = lenx * leny * lenz;
+
+    std::vector<amrex::Real> xrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> yrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> zrhocells(8 * nrho, 0.0);
+
+    svbool_t p_true = svwhilelt_b64(0, 8);
+    svbool_t p_0_3 = svwhilelt_b64(0, 4);
+
+    int sx_step[8] = {0, 1 * block_size, 2 * block_size, 3 * block_size, 0, 1 * block_size, 2 * block_size, 3 * block_size};
+    int sy_step[8] = {0, 0, 0, 0,block_size,block_size,block_size,block_size};
+
+    intVec mx_index = svld1sw_s64(p_true, sx_step);
+    intVec my_index = svld1sw_s64(p_true, sy_step);
+
+    int thread_num = omp_get_thread_num();
+    int m_init_np = WarpX::GetInstance().m_init_np;
+    int* newbin = WarpX::GetInstance().newbin + thread_num * m_init_np;
+
+    for(long ip = 0; ip < np_to_deposit; ip += vl){ 
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_deposit);
+        
+        Vec uxp_v = Vec::Load(p_ip, &uxp[ip]);
+        Vec uyp_v = Vec::Load(p_ip, &uyp[ip]);
+        Vec uzp_v = Vec::Load(p_ip, &uzp[ip]);
+        Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                    + uyp_v * uyp_v * clightsq
+                                    + uzp_v * uzp_v * clightsq).Sqrt();
+        Vec vx_v = uxp_v * gaminv;
+        Vec vy_v = uyp_v * gaminv;
+        Vec vz_v = uzp_v * gaminv;        
+
+        Vec xp = Vec::Load(p_ip, &mx[ip]);
+        Vec yp = Vec::Load(p_ip, &my[ip]);
+        Vec zp = Vec::Load(p_ip, &mz[ip]);
+
+        Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+        Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+        Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+        
+        intVec j_cellv = svcvt_s64_f64_z(p_ip, xmid) - 1;
+        intVec k_cellv = svcvt_s64_f64_z(p_ip, ymid) - 1;
+        intVec l_cellv = svcvt_s64_f64_z(p_ip, zmid) - 1;
+
+        intVec newbin_v = j_cellv + k_cellv * lenx + l_cellv * lenx * leny;
+        svst1w(p_ip, newbin + ip, newbin_v);
+    }
+
+    int num_bins = lenx * leny * lenz;
+    vector<vector<int>> outside_bin_ip(num_bins);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+
+    vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
+    std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
+    vector<int>& d_local_index = ptile.d_local_index;
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int& oldbin_offset = d_incr_bin_offset[old_bin];
+                int& oldbin_length = d_incr_bin_length[old_bin];
+
+                int oldbin_outside_length = outside_bin_ip[old_bin].size();
+                vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+                if (oldbin_offset == -1)
+                {
+                    for (int i = 0; i < oldbin_outside_length; i += vl)
+                    {
+                        svbool_t p_ip = svwhilelt_b64(i, oldbin_outside_length);
+                        intVec ip_v = svld1sw_s64(p_ip, &oldbin_outside_particles[i]);
+
+                        Vec uxp_v = svld1_gather_s64index_f64(p_ip, uxp, ip_v);
+                        Vec uyp_v = svld1_gather_s64index_f64(p_ip, uyp, ip_v);
+                        Vec uzp_v = svld1_gather_s64index_f64(p_ip, uzp, ip_v);
+                        Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                                    + uyp_v * uyp_v * clightsq
+                                                    + uzp_v * uzp_v * clightsq).Sqrt();
+                        Vec vx_v = uxp_v * gaminv;
+                        Vec vy_v = uyp_v * gaminv;
+                        Vec vz_v = uzp_v * gaminv;
+
+                        Vec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+                        Vec wq_v = q * wp_v;
+
+                        Vec wqx_v = wq_v * invvol * vx_v;
+                        Vec wqy_v = wq_v * invvol * vy_v;
+                        Vec wqz_v = wq_v * invvol * vz_v;
+
+                        wqx_v.Store(p_ip, &wqx[0]);
+                        wqy_v.Store(p_ip, &wqy[0]);
+                        wqz_v.Store(p_ip, &wqz[0]);
+
+                        Vec xp = svld1_gather_s64index_f64(p_ip, mx, ip_v);
+                        Vec yp = svld1_gather_s64index_f64(p_ip, my, ip_v);
+                        Vec zp = svld1_gather_s64index_f64(p_ip, mz, ip_v);
+
+                        Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                        Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                        Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+
+                        compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                        compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                        compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                        int rho_end = block_size < oldbin_outside_length - i ? block_size : oldbin_outside_length - i;
+                        for (int iip = 0; iip < rho_end; iip++)
+                        {
+                            int ip = oldbin_outside_particles[i + iip];
+                            for (int iz = 0; iz < 4; ++iz)
+                            {
+                                double sz_wqx_tmp = sz_m[iz * block_size + iip] * wqx[iip];
+                                double sz_wqy_tmp = sz_m[iz * block_size + iip] * wqy[iip];
+                                double sz_wqz_tmp = sz_m[iz * block_size + iip] * wqz[iip];
+                                for (int iy = 0; iy < 4; iy += 2)
+                                {
+                                    int rho_offset = (old_bin + iy * lenx + iz * lenx * leny) * 8;
+
+                                    intVec mx_index = svld1sw_s64(p_true, sx_step);
+                                    intVec my_index = svld1sw_s64(p_true, sy_step);
+
+                                    Vec sx_v = svld1_gather_s64index_f64(p_true, &sx_m[iip], mx_index);
+                                    Vec sy_v = svld1_gather_s64index_f64(p_true, &sy_m[iy * block_size + iip], my_index);
+
+                                    Vec sx_m_sy_v = sx_v * sy_v;
+                                    
+                                    Vec xrhocells_v = Vec::Load(p_true, &xrhocells[rho_offset]);
+                                    Vec yrhocells_v = Vec::Load(p_true, &yrhocells[rho_offset]);
+                                    Vec zrhocells_v = Vec::Load(p_true, &zrhocells[rho_offset]);
+
+                                    xrhocells_v += sx_m_sy_v * sz_wqx_tmp;
+                                    yrhocells_v += sx_m_sy_v * sz_wqy_tmp;
+                                    zrhocells_v += sx_m_sy_v * sz_wqz_tmp;
+
+                                    xrhocells_v.Store(p_true, &xrhocells[rho_offset]);
+                                    yrhocells_v.Store(p_true, &yrhocells[rho_offset]);
+                                    zrhocells_v.Store(p_true, &zrhocells[rho_offset]);
+                                }
+                            }
+                        }                        
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < oldbin_length; i += vl)
+                    {
+                        svbool_t p_ip = svwhilelt_b64(i, oldbin_length);
+                        int idx = oldbin_offset + i;
+                        intVec ip_v = svld1sw_s64(p_ip, &d_local_index[idx]);
+
+                        Vec uxp_v = svld1_gather_s64index_f64(p_ip, uxp, ip_v);
+                        Vec uyp_v = svld1_gather_s64index_f64(p_ip, uyp, ip_v);
+                        Vec uzp_v = svld1_gather_s64index_f64(p_ip, uzp, ip_v);
+                        Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                                    + uyp_v * uyp_v * clightsq
+                                                    + uzp_v * uzp_v * clightsq).Sqrt();
+                        Vec vx_v = uxp_v * gaminv;
+                        Vec vy_v = uyp_v * gaminv;
+                        Vec vz_v = uzp_v * gaminv;
+
+                        Vec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+                        Vec wq_v = q * wp_v;
+
+                        Vec wqx_v = wq_v * invvol * vx_v;
+                        Vec wqy_v = wq_v * invvol * vy_v;
+                        Vec wqz_v = wq_v * invvol * vz_v;
+
+                        wqx_v.Store(p_ip, &wqx[0]);
+                        wqy_v.Store(p_ip, &wqy[0]);
+                        wqz_v.Store(p_ip, &wqz[0]);
+
+                        Vec xp = svld1_gather_s64index_f64(p_ip, mx, ip_v);
+                        Vec yp = svld1_gather_s64index_f64(p_ip, my, ip_v);
+                        Vec zp = svld1_gather_s64index_f64(p_ip, mz, ip_v);
+
+                        Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                        Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                        Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+
+                        compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                        compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                        compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                        int rho_end = block_size < oldbin_length - i ? block_size : oldbin_length - i;
+                        for (int iip = 0; iip < rho_end; iip++)
+                        {
+                            int ip = d_local_index[idx + iip];
+                            for (int iz = 0; iz < 4; ++iz)
+                            {
+                                double sz_wqx_tmp = sz_m[iz * block_size + iip] * wqx[iip];
+                                double sz_wqy_tmp = sz_m[iz * block_size + iip] * wqy[iip];
+                                double sz_wqz_tmp = sz_m[iz * block_size + iip] * wqz[iip];
+                                for (int iy = 0; iy < 4; iy += 2)
+                                {
+                                    int rho_offset = (old_bin + iy * lenx + iz * lenx * leny) * 8;
+
+                                    intVec mx_index = svld1sw_s64(p_true, sx_step);
+                                    intVec my_index = svld1sw_s64(p_true, sy_step);
+
+                                    Vec sx_v = svld1_gather_s64index_f64(p_true, &sx_m[iip], mx_index);
+                                    Vec sy_v = svld1_gather_s64index_f64(p_true, &sy_m[iy * block_size + iip], my_index);
+
+                                    Vec sx_m_sy_v = sx_v * sy_v;
+                                    
+                                    Vec xrhocells_v = Vec::Load(p_true, &xrhocells[rho_offset]);
+                                    Vec yrhocells_v = Vec::Load(p_true, &yrhocells[rho_offset]);
+                                    Vec zrhocells_v = Vec::Load(p_true, &zrhocells[rho_offset]);
+
+                                    xrhocells_v += sx_m_sy_v * sz_wqx_tmp;
+                                    yrhocells_v += sx_m_sy_v * sz_wqy_tmp;
+                                    zrhocells_v += sx_m_sy_v * sz_wqz_tmp;
+
+                                    xrhocells_v.Store(p_true, &xrhocells[rho_offset]);
+                                    yrhocells_v.Store(p_true, &yrhocells[rho_offset]);
+                                    zrhocells_v.Store(p_true, &zrhocells[rho_offset]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (int iz = 0; iz < len.z; ++iz)
+    {
+        for (int iy = 0; iy < len.y; ++iy)
+        {
+            for(int ix = 0; ix < len.x; ix++){
+                int arr_offset = ix + iy * xjstride + iz * xkstride;
+                int rho_offset = 8 * (ix + iy * lenx + iz * lenx * leny);
+
+                Vec xrhocells_0_3_v = Vec::Load(p_0_3, &xrhocells[0 + rho_offset]);
+                Vec xrhocells_4_7_v = Vec::Load(p_0_3, &xrhocells[4 + rho_offset]);
+                Vec jx_arr_0_3_v = Vec::Load(p_0_3, &jx_arr.p[0 + arr_offset]);
+                Vec jx_arr_4_7_v = Vec::Load(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+
+                Vec yrhocells_0_3_v = Vec::Load(p_0_3, &yrhocells[0 + rho_offset]);
+                Vec yrhocells_4_7_v = Vec::Load(p_0_3, &yrhocells[4 + rho_offset]);
+                Vec jy_arr_0_3_v = Vec::Load(p_0_3, &jy_arr.p[0 + arr_offset]);
+                Vec jy_arr_4_7_v = Vec::Load(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                
+                Vec zrhocells_0_3_v = Vec::Load(p_0_3, &zrhocells[0 + rho_offset]);
+                Vec zrhocells_4_7_v = Vec::Load(p_0_3, &zrhocells[4 + rho_offset]);
+                Vec jz_arr_0_3_v = Vec::Load(p_0_3, &jz_arr.p[0 + arr_offset]);
+                Vec jz_arr_4_7_v = Vec::Load(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+
+                jx_arr_0_3_v += xrhocells_0_3_v;
+                jy_arr_0_3_v += yrhocells_0_3_v;
+                jz_arr_0_3_v += zrhocells_0_3_v;
+                jx_arr_4_7_v += xrhocells_4_7_v;
+                jy_arr_4_7_v += yrhocells_4_7_v;
+                jz_arr_4_7_v += zrhocells_4_7_v;
+
+                jx_arr_0_3_v.Store(p_0_3, &jx_arr.p[0 + arr_offset]);
+                jy_arr_0_3_v.Store(p_0_3, &jy_arr.p[0 + arr_offset]);
+                jz_arr_0_3_v.Store(p_0_3, &jz_arr.p[0 + arr_offset]);
+
+                jx_arr_4_7_v.Store(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+                jy_arr_4_7_v.Store(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                jz_arr_4_7_v.Store(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+            }
+        }
+    }
+}
+
 template <int depos_order>
 void doDepositionShapeN_sve_rhocell_physort_order3 (const GetParticlePosition<PIdx>& GetPosition,
                         const amrex::ParticleReal * const wp,

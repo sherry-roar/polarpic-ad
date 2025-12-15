@@ -197,7 +197,7 @@ WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
 
 #if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
             ptile.init_phys_sort(nps, offsets, numBins, box, growbox);
-#elif defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3)
+#elif defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3) || defined(SVE_RHOCELL_INCRSORT_ORDER3)
             ptile.init_incr_sort(nps, offsets, numBins, box, growbox);
 #endif
         }
@@ -1589,6 +1589,19 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                     //     WarpX::n_rz_azimuthal_modes
                     // );
 #endif  // SVE_RHOCELL_SME_LARGE_ORDER3
+
+#ifdef SVE_RHOCELL_INCRSORT_ORDER3
+                    printf("RUN SVE_RHOCELL_INCRSORT_ORDER3\n");
+
+                    const Dim3 len = length(tilebox);
+                    auto& ptile = ParticlesAt(lev, pti);
+                    doDepositionShapeN_sve_rhocell_incrsort_order3<3>(
+                        GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
+                        uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
+                        jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
+                        xyzmin, len, q, ptile, WarpX::n_rz_azimuthal_modes
+                    );
+#endif  // SVE_RHOCELL_INCRSORT_ORDER3
 
 #ifdef SVE_RHOCELL_PHYSORT_ORDER3
                     printf("RUN SVE_RHOCELL_PHYSORT_ORDER3\n");
