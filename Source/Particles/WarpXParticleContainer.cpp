@@ -197,7 +197,7 @@ WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
 
 #if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
             ptile.init_phys_sort(nps, offsets, numBins, box, growbox);
-#elif defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3)
+#elif defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3)
             ptile.init_incr_sort(nps, offsets, numBins, box, growbox);
 #endif
         }
