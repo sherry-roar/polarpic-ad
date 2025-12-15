@@ -524,7 +524,7 @@ WarpX::InitTempVectors()
     aos_arr = (amrex::Real*)malloc(max_threads * 6 * m_box_size * sizeof(amrex::Real));
     int_buffer = (int*)malloc(max_threads * m_init_np * sizeof(int));
 
-#ifdef PUSH_SVE_INCRSORT_ORDER3
+#if defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3)
     newbin = (int*)malloc(m_init_np * max_threads * sizeof(int));
     pending_moves = (int*)malloc(m_init_np * max_threads * sizeof(int));
     invalid_idx = (int*)malloc(m_init_np * max_threads * sizeof(int));

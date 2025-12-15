@@ -195,7 +195,11 @@ WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
             const amrex::IntVect& ng_J = WarpX::GetInstance().get_ng_depos_J();
             growbox.grow(ng_J);
 
+#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
             ptile.init_phys_sort(nps, offsets, numBins, box, growbox);
+#elif defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3)
+            ptile.init_incr_sort(nps, offsets, numBins, box, growbox);
+#endif
         }
     }
 }
