@@ -401,6 +401,20 @@ public:
                          amrex::ParticleReal *uz_p_test,
                          DtType a_dt_type=DtType::Full);
 
+    virtual void PushPX_sve_incrsort_order3 (WarpXParIter& pti,
+                         amrex::FArrayBox const * exfab,
+                         amrex::FArrayBox const * eyfab,
+                         amrex::FArrayBox const * ezfab,
+                         amrex::FArrayBox const * bxfab,
+                         amrex::FArrayBox const * byfab,
+                         amrex::FArrayBox const * bzfab,
+                         amrex::IntVect ngEB, int /*e_is_nodal*/,
+                         long offset,
+                         long np_to_push,
+                         int lev, int gather_lev,
+                         amrex::Real dt, ScaleFields scaleFields,
+                         DtType a_dt_type=DtType::Full);
+
     virtual void PushPX_sve_physort_order3 (WarpXParIter& pti,
                          amrex::FArrayBox const * exfab,
                          amrex::FArrayBox const * eyfab,

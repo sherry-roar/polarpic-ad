@@ -360,6 +360,10 @@ public:
     int *int_buffer;
     bool is_last_step = false;
 
+    int* newbin;
+    int* pending_moves;
+    int* invalid_idx;
+
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mx_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_my_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mz_buffer_arr;
