@@ -10539,9 +10539,6 @@ __arm_new("za") inline void PushPX_sve_sme_incr_physort_order3_kernel(
                     ux_v += uyp_v * sz_v - uzp_v * sy_v;
                     uy_v += uzp_v * sx_v - uxp_v * sz_v;
                     uz_v += uxp_v * sy_v - uyp_v * sx_v;
-                    ux_v.Store(p_ip, &ux_buffer_ptr[buffer_idx]);
-                    uy_v.Store(p_ip, &uy_buffer_ptr[buffer_idx]);
-                    uz_v.Store(p_ip, &uz_buffer_ptr[buffer_idx]);
 
                     ux_v += econst * Exp_v;
                     uy_v += econst * Eyp_v;
@@ -10567,7 +10564,7 @@ __arm_new("za") inline void PushPX_sve_sme_incr_physort_order3_kernel(
                     yp_v.Store(p_ip, &my_buffer_ptr[buffer_idx]);
                     zp_v.Store(p_ip, &mz_buffer_ptr[buffer_idx]);
 
-                    Vec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+                    MVec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
                     wp_v.Store(p_ip, &w_buffer_ptr[buffer_idx]);
                     
                     uint64_t buffer_add_num = svcntp_b64(p_ip, p_ip);
@@ -10771,14 +10768,6 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
                                    amrex::Real dt, ScaleFields scaleFields,
                                    DtType a_dt_type)
 {
-    uint64_t init_area = 0;
-    uint64_t aos_area = 0;
-    uint64_t precompute_area = 0;
-    uint64_t sort_area = 0;
-    uint64_t calculate_area = 0;
-    uint64_t reduce_area = 0;
-
-    uint64_t init_start = rdtscv();
     const int thread_num = omp_get_thread_num();
 
     WARPX_ALWAYS_ASSERT_WITH_MESSAGE((gather_lev==(lev-1)) ||
@@ -10823,17 +10812,7 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
     int leny = len.y;
     int lenz = len.z;
     int num_bin = lenx * leny * lenz;
-
-    init_area += rdtscv() - init_start;
-
-    uint64_t aos_start = rdtscv();
      
-    int m_box_size = WarpX::GetInstance().m_box_size;
-    amrex::Real* aos_arr = WarpX::GetInstance().aos_arr + thread_num * 6 * m_box_size;
-
-    aos_area += rdtscv() - aos_start;
-
-    init_start = rdtscv();
     auto& attribs = pti.GetAttribs();
     ParticleReal* const AMREX_RESTRICT wp = attribs[PIdx::w].dataPtr() + offset;
     ParticleReal* const AMREX_RESTRICT ux = attribs[PIdx::ux].dataPtr() + offset;
@@ -10879,14 +10858,12 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
 
     vector<vector<int>> bin_to_ip(num_bin);
     long tmpbin[8];
-    // init_area += rdtscv() - init_start;
 
     auto& ptile = ParticlesAt(lev, pti);
     int& g_move_begin = ptile.g_move_begin;
     
     for (long ip = g_move_begin; ip < np_to_push; ip += vl)
     {
-        uint64_t precompute_start = rdtscv();
         svbool_t p_ip = svwhilelt_b64(ip, np_to_push);
         Vec xp_v = Vec::Load(p_ip, &m_x[ip]);
         Vec yp_v = Vec::Load(p_ip, &m_y[ip]);
@@ -10902,9 +10879,7 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
         intVec l_nodev = svcvt_s64_f64_z(p_ip, z) - 1;
 
         intVec newbin_v = j_nodev + k_nodev * lenx + l_nodev * lenx * leny;
-        precompute_area += rdtscv() - precompute_start;
         
-        uint64_t sort_begin = rdtscv();
         newbin_v.Store(p_ip, tmpbin);
 
         int num_particles = svcntp_b64(p_ip, p_ip);
@@ -10912,10 +10887,7 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
         {
             bin_to_ip[tmpbin[k]].push_back((int)(ip + k));
         }
-        sort_area += rdtscv() - sort_begin;
     }
-
-    uint64_t calculate_start = rdtscv();
 
     std::vector<int>& g_phys_bin_offset = ptile.g_phys_bin_offset;
     std::vector<int>& g_phys_bin_length = ptile.g_phys_bin_length;
@@ -11303,10 +11275,8 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
     }
 
     g_move_begin = move_idx;
-    calculate_area += rdtscv() - calculate_start;
 
     // 操作完成后进行指针交换
-    uint64_t reduce_start = rdtscv();
     attribs[PIdx::x].swap(mx_buffer);
     attribs[PIdx::y].swap(my_buffer);
     attribs[PIdx::z].swap(mz_buffer);
@@ -11314,10 +11284,6 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
     attribs[PIdx::uy].swap(uy_buffer);
     attribs[PIdx::uz].swap(uz_buffer);
     attribs[PIdx::w].swap(w_buffer);
-    reduce_area += rdtscv() - reduce_start;
-
-    double total = (double)(init_area + aos_area + precompute_area + sort_area + calculate_area + reduce_area);
-    printf("init: %lf, aos: %lf, pre: %lf, sort: %lf, cal: %lf, reduce: %lf\n", (double)init_area / total, (double)aos_area / total, (double)precompute_area / total, (double)sort_area / total, (double)calculate_area / total, (double)reduce_area / total);
 }
 
 __arm_new("za") inline void PushPX_sve_sme_physort_order3_kernel(
