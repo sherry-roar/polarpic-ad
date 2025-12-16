@@ -12178,6 +12178,465 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3 (const GetParticlePositi
 }
 
 template <int depos_order>
+void doDepositionShapeN_sve_rhocell_binsort_physort_order3 (const GetParticlePosition<PIdx>& GetPosition,
+                        const amrex::ParticleReal * const wp,
+                        const amrex::ParticleReal * const uxp,
+                        const amrex::ParticleReal * const uyp,
+                        const amrex::ParticleReal * const uzp,
+                        const int* ion_lev,
+                        amrex::FArrayBox& jx_fab,
+                        amrex::FArrayBox& jy_fab,
+                        amrex::FArrayBox& jz_fab,
+                        long np_to_deposit,
+                        amrex::Real relative_time,
+                        const amrex::XDim3 & dinv,
+                        const amrex::XDim3 & xyzmin,
+                        amrex::Dim3 len,
+                        amrex::Real q,
+                        ParticleTileType& ptile,
+                        [[maybe_unused]]int n_rz_azimuthal_modes)
+{
+    using namespace amrex::literals;
+
+    const amrex::Real invvol = dinv.x*dinv.y*dinv.z;
+
+    const amrex::Real clightsq = 1.0_rt/PhysConst::c/PhysConst::c;
+
+    amrex::Array4<amrex::Real> const& jx_arr = jx_fab.array();
+    amrex::Array4<amrex::Real> const& jy_arr = jy_fab.array();
+    amrex::Array4<amrex::Real> const& jz_arr = jz_fab.array();
+    
+    constexpr int nshapes = 1 + 3;
+    const int block_size = 8;
+    const int vl = svcntd();
+
+    const amrex::ParticleReal* mx = GetPosition.m_x;
+    const amrex::ParticleReal* my = GetPosition.m_y;
+    const amrex::ParticleReal* mz = GetPosition.m_z;
+    
+    // 预计算网格步长
+    const int xjstride = jx_arr.jstride;
+    const int xkstride = jx_arr.kstride;
+
+    auto compute_shape_factor_part_sve_order3 = [](double* sx, Vec xmid, svbool_t p) {
+        Vec j = svrintz_x(p, xmid);
+        Vec xint = xmid - j;
+        Vec one_minus_xint = 1.0 - xint;
+
+        Vec sx0 = (1.0 / 6.0) * one_minus_xint * one_minus_xint * one_minus_xint;
+        sx0.Store(p, &sx[0 * block_size]);
+        Vec sx1 = (2.0 / 3.0) - xint * xint * (1.0 - xint * 0.5);
+        sx1.Store(p, &sx[1 * block_size]);
+        Vec sx2 = (2.0 / 3.0) - one_minus_xint * one_minus_xint * (1.0 - 0.5 *one_minus_xint);
+        sx2.Store(p, &sx[2 * block_size]);
+        Vec sx3 = (1.0 / 6.0) * xint * xint * xint;
+        sx3.Store(p, &sx[3 * block_size]);
+    };
+
+    std::vector<amrex::Real> wqx(block_size, 0.0);
+    std::vector<amrex::Real> wqy(block_size, 0.0);
+    std::vector<amrex::Real> wqz(block_size, 0.0);
+    double sx_m[nshapes * block_size] = {0.};
+    double sy_m[nshapes * block_size] = {0.};
+    double sz_m[nshapes * block_size] = {0.};
+
+    const int lenx = len.x;
+    const int leny = len.y;
+    const int lenz = len.z;
+    const int nrho = lenx * leny * lenz;
+
+    std::vector<amrex::Real> xrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> yrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> zrhocells(8 * nrho, 0.0);
+
+    svbool_t p_true = svwhilelt_b64(0, 8);
+    svbool_t p_0_3 = svwhilelt_b64(0, 4);
+
+    int sx_step[8] = {0, 1 * block_size, 2 * block_size, 3 * block_size, 0, 1 * block_size, 2 * block_size, 3 * block_size};
+    int sy_step[8] = {0, 0, 0, 0,block_size,block_size,block_size,block_size};
+
+    intVec mx_index = svld1sw_s64(p_true, sx_step);
+    intVec my_index = svld1sw_s64(p_true, sy_step);
+
+    int g_move_begin = ptile.g_move_begin;
+    const std::vector<int>& g_phys_bin_offset = ptile.g_phys_bin_offset;
+    const std::vector<int>& g_phys_bin_length = ptile.g_phys_bin_length;
+
+    int num_bins = lenx * leny * lenz;
+    vector<vector<int>> bin_to_ip(num_bins);
+
+    int tmpbin[8];
+
+    for(long ip = g_move_begin; ip < np_to_deposit; ip += vl){ 
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_deposit);
+        
+        Vec uxp_v = Vec::Load(p_ip, &uxp[ip]);
+        Vec uyp_v = Vec::Load(p_ip, &uyp[ip]);
+        Vec uzp_v = Vec::Load(p_ip, &uzp[ip]);
+        Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                    + uyp_v * uyp_v * clightsq
+                                    + uzp_v * uzp_v * clightsq).Sqrt();
+        Vec vx_v = uxp_v * gaminv;
+        Vec vy_v = uyp_v * gaminv;
+        Vec vz_v = uzp_v * gaminv;        
+
+        Vec xp = Vec::Load(p_ip, &mx[ip]);
+        Vec yp = Vec::Load(p_ip, &my[ip]);
+        Vec zp = Vec::Load(p_ip, &mz[ip]);
+
+        Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+        Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+        Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+        
+        intVec j_cellv = svcvt_s64_f64_z(p_ip, xmid) - 1;
+        intVec k_cellv = svcvt_s64_f64_z(p_ip, ymid) - 1;
+        intVec l_cellv = svcvt_s64_f64_z(p_ip, zmid) - 1;
+
+        intVec tmpbin_v = j_cellv + k_cellv * lenx + l_cellv * lenx * leny;
+        svst1w(p_ip, tmpbin, tmpbin_v);
+
+        int particles_num = np_to_deposit - ip < block_size ? np_to_deposit - ip : block_size;
+        for(int i = 0; i < particles_num; i++){
+            bin_to_ip[tmpbin[i]].push_back(ip + i);
+        }
+    }
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int offset = g_phys_bin_offset[old_bin];
+                int binlength = g_phys_bin_length[old_bin];
+                vector<int>& tmp_particles = bin_to_ip[old_bin];
+                int tmp_binlength = tmp_particles.size();
+                
+                if (binlength == 0 && tmp_binlength == 0) continue;
+
+                int rho_offset_iy01_z0 = (old_bin + 0 * lenx + 0 * lenx * leny) * 8;
+                int rho_offset_iy01_z1 = (old_bin + 0 * lenx + 1 * lenx * leny) * 8;
+                int rho_offset_iy01_z2 = (old_bin + 0 * lenx + 2 * lenx * leny) * 8;
+                int rho_offset_iy01_z3 = (old_bin + 0 * lenx + 3 * lenx * leny) * 8;
+
+                int rho_offset_iy23_z0 = (old_bin + 2 * lenx + 0 * lenx * leny) * 8;
+                int rho_offset_iy23_z1 = (old_bin + 2 * lenx + 1 * lenx * leny) * 8;
+                int rho_offset_iy23_z2 = (old_bin + 2 * lenx + 2 * lenx * leny) * 8;
+                int rho_offset_iy23_z3 = (old_bin + 2 * lenx + 3 * lenx * leny) * 8;
+
+                Vec xrhocells_iy01_z0_v = Vec::Load(p_true, &xrhocells[rho_offset_iy01_z0]);
+                Vec yrhocells_iy01_z0_v = Vec::Load(p_true, &yrhocells[rho_offset_iy01_z0]);
+                Vec zrhocells_iy01_z0_v = Vec::Load(p_true, &zrhocells[rho_offset_iy01_z0]);
+                
+                Vec xrhocells_iy01_z1_v = Vec::Load(p_true, &xrhocells[rho_offset_iy01_z1]);
+                Vec yrhocells_iy01_z1_v = Vec::Load(p_true, &yrhocells[rho_offset_iy01_z1]);
+                Vec zrhocells_iy01_z1_v = Vec::Load(p_true, &zrhocells[rho_offset_iy01_z1]);
+
+                Vec xrhocells_iy01_z2_v = Vec::Load(p_true, &xrhocells[rho_offset_iy01_z2]);
+                Vec yrhocells_iy01_z2_v = Vec::Load(p_true, &yrhocells[rho_offset_iy01_z2]);
+                Vec zrhocells_iy01_z2_v = Vec::Load(p_true, &zrhocells[rho_offset_iy01_z2]);
+
+                Vec xrhocells_iy01_z3_v = Vec::Load(p_true, &xrhocells[rho_offset_iy01_z3]);
+                Vec yrhocells_iy01_z3_v = Vec::Load(p_true, &yrhocells[rho_offset_iy01_z3]);
+                Vec zrhocells_iy01_z3_v = Vec::Load(p_true, &zrhocells[rho_offset_iy01_z3]);
+
+                Vec xrhocells_iy23_z0_v = Vec::Load(p_true, &xrhocells[rho_offset_iy23_z0]);
+                Vec yrhocells_iy23_z0_v = Vec::Load(p_true, &yrhocells[rho_offset_iy23_z0]);
+                Vec zrhocells_iy23_z0_v = Vec::Load(p_true, &zrhocells[rho_offset_iy23_z0]);
+
+                Vec xrhocells_iy23_z1_v = Vec::Load(p_true, &xrhocells[rho_offset_iy23_z1]);
+                Vec yrhocells_iy23_z1_v = Vec::Load(p_true, &yrhocells[rho_offset_iy23_z1]);
+                Vec zrhocells_iy23_z1_v = Vec::Load(p_true, &zrhocells[rho_offset_iy23_z1]);
+
+                Vec xrhocells_iy23_z2_v = Vec::Load(p_true, &xrhocells[rho_offset_iy23_z2]);
+                Vec yrhocells_iy23_z2_v = Vec::Load(p_true, &yrhocells[rho_offset_iy23_z2]);
+                Vec zrhocells_iy23_z2_v = Vec::Load(p_true, &zrhocells[rho_offset_iy23_z2]);
+
+                Vec xrhocells_iy23_z3_v = Vec::Load(p_true, &xrhocells[rho_offset_iy23_z3]);
+                Vec yrhocells_iy23_z3_v = Vec::Load(p_true, &yrhocells[rho_offset_iy23_z3]);
+                Vec zrhocells_iy23_z3_v = Vec::Load(p_true, &zrhocells[rho_offset_iy23_z3]);
+
+                for (int k = 0; k < binlength; k += vl)
+                {
+                    svbool_t p_ip = svwhilelt_b64(k, binlength);
+                    long idx = offset + k;
+
+                    Vec uxp_v = Vec::Load(p_ip, &uxp[idx]);
+                    Vec uyp_v = Vec::Load(p_ip, &uyp[idx]);
+                    Vec uzp_v = Vec::Load(p_ip, &uzp[idx]);
+                    Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                                + uyp_v * uyp_v * clightsq
+                                                + uzp_v * uzp_v * clightsq).Sqrt();
+                    Vec vx_v = uxp_v * gaminv;
+                    Vec vy_v = uyp_v * gaminv;
+                    Vec vz_v = uzp_v * gaminv;
+            
+                    Vec wp_v = Vec::Load(p_ip, &wp[idx]);
+                    
+                    Vec wq_v = q * wp_v;
+            
+                    Vec wqx_v = wq_v * invvol * vx_v;
+                    Vec wqy_v = wq_v * invvol * vy_v;
+                    Vec wqz_v = wq_v * invvol * vz_v;
+            
+                    wqx_v.Store(p_ip, &wqx[0]);
+                    wqy_v.Store(p_ip, &wqy[0]);
+                    wqz_v.Store(p_ip, &wqz[0]);
+            
+                    Vec xp = Vec::Load(p_ip, &mx[idx]);
+                    Vec yp = Vec::Load(p_ip, &my[idx]);
+                    Vec zp = Vec::Load(p_ip, &mz[idx]);
+            
+                    Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                    Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                    Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+                    
+                    compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                    compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                    compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                    int rho_end = binlength - k < block_size ? binlength - k : block_size;
+                    for (long iip = 0; iip < rho_end; ++iip)
+                    {       
+                        Vec sx_v = svld1_gather_s64index_f64(p_true, &sx_m[iip], mx_index);
+                        Vec sy_01_v = svld1_gather_s64index_f64(p_true, &sy_m[0 * block_size + iip], my_index);
+
+                        Vec sx_m_sy_01_v = sx_v * sy_01_v;
+
+                        double sz0_wqx_tmp = sz_m[0 * block_size + iip] * wqx[iip];
+                        double sz0_wqy_tmp = sz_m[0 * block_size + iip] * wqy[iip];
+                        double sz0_wqz_tmp = sz_m[0 * block_size + iip] * wqz[iip];
+
+                        double sz1_wqx_tmp = sz_m[1 * block_size + iip] * wqx[iip];
+                        double sz1_wqy_tmp = sz_m[1 * block_size + iip] * wqy[iip];
+                        double sz1_wqz_tmp = sz_m[1 * block_size + iip] * wqz[iip];
+
+                        double sz2_wqx_tmp = sz_m[2 * block_size + iip] * wqx[iip];
+                        double sz2_wqy_tmp = sz_m[2 * block_size + iip] * wqy[iip];
+                        double sz2_wqz_tmp = sz_m[2 * block_size + iip] * wqz[iip];
+
+                        double sz3_wqx_tmp = sz_m[3 * block_size + iip] * wqx[iip];
+                        double sz3_wqy_tmp = sz_m[3 * block_size + iip] * wqy[iip];
+                        double sz3_wqz_tmp = sz_m[3 * block_size + iip] * wqz[iip];
+
+                        xrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqx_tmp;
+                        yrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqy_tmp;
+                        zrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqz_tmp;
+
+                        xrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqx_tmp;
+                        yrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqy_tmp;
+                        zrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqz_tmp;
+
+                        xrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqx_tmp;
+                        yrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqy_tmp;
+                        zrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqz_tmp;
+
+                        xrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqx_tmp;
+                        yrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqy_tmp;
+                        zrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqz_tmp;
+
+                        Vec sy_23_v = svld1_gather_s64index_f64(p_true, &sy_m[2 * block_size + iip], my_index);
+                        Vec sx_m_sy_23_v = sx_v * sy_23_v;
+
+                        xrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqx_tmp;
+                        yrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqy_tmp;
+                        zrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqz_tmp;
+
+                        xrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqx_tmp;
+                        yrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqy_tmp;
+                        zrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqz_tmp;
+
+                        xrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqx_tmp;
+                        yrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqy_tmp;
+                        zrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqz_tmp;
+
+                        xrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqx_tmp;
+                        yrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqy_tmp;
+                        zrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqz_tmp;
+                    }
+                }
+
+                for (int k = 0; k < tmp_binlength; k += vl)
+                {
+                    svbool_t p_ip = svwhilelt_b64(k, tmp_binlength);
+                    intVec ip_v = svld1sw_s64(p_ip, &tmp_particles[k]);
+
+                    Vec uxp_v = svld1_gather_s64index_f64(p_ip, uxp, ip_v);
+                    Vec uyp_v = svld1_gather_s64index_f64(p_ip, uyp, ip_v);
+                    Vec uzp_v = svld1_gather_s64index_f64(p_ip, uzp, ip_v);
+
+                    Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                                + uyp_v * uyp_v * clightsq
+                                                + uzp_v * uzp_v * clightsq).Sqrt();
+                    
+                    Vec vx_v = uxp_v * gaminv;
+                    Vec vy_v = uyp_v * gaminv;
+                    Vec vz_v = uzp_v * gaminv;
+
+                    Vec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+
+                    Vec wq_v = q * wp_v;
+            
+                    Vec wqx_v = wq_v * invvol * vx_v;
+                    Vec wqy_v = wq_v * invvol * vy_v;
+                    Vec wqz_v = wq_v * invvol * vz_v;
+            
+                    wqx_v.Store(p_ip, &wqx[0]);
+                    wqy_v.Store(p_ip, &wqy[0]);
+                    wqz_v.Store(p_ip, &wqz[0]);
+
+                    Vec xp = svld1_gather_s64index_f64(p_ip, mx, ip_v);
+                    Vec yp = svld1_gather_s64index_f64(p_ip, my, ip_v);
+                    Vec zp = svld1_gather_s64index_f64(p_ip, mz, ip_v);
+
+                    Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                    Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                    Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+                    
+                    compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                    compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                    compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                    int rho_end = tmp_binlength - k < block_size ? tmp_binlength - k : block_size;
+                    for (long iip = 0; iip < rho_end; ++iip)
+                    {
+                        Vec sx_v = svld1_gather_s64index_f64(p_true, &sx_m[iip], mx_index);
+                        Vec sy_01_v = svld1_gather_s64index_f64(p_true, &sy_m[0 * block_size + iip], my_index);
+
+                        Vec sx_m_sy_01_v = sx_v * sy_01_v;
+
+                        double sz0_wqx_tmp = sz_m[0 * block_size + iip] * wqx[iip];
+                        double sz0_wqy_tmp = sz_m[0 * block_size + iip] * wqy[iip];
+                        double sz0_wqz_tmp = sz_m[0 * block_size + iip] * wqz[iip];
+
+                        double sz1_wqx_tmp = sz_m[1 * block_size + iip] * wqx[iip];
+                        double sz1_wqy_tmp = sz_m[1 * block_size + iip] * wqy[iip];
+                        double sz1_wqz_tmp = sz_m[1 * block_size + iip] * wqz[iip];
+
+                        double sz2_wqx_tmp = sz_m[2 * block_size + iip] * wqx[iip];
+                        double sz2_wqy_tmp = sz_m[2 * block_size + iip] * wqy[iip];
+                        double sz2_wqz_tmp = sz_m[2 * block_size + iip] * wqz[iip];
+
+                        double sz3_wqx_tmp = sz_m[3 * block_size + iip] * wqx[iip];
+                        double sz3_wqy_tmp = sz_m[3 * block_size + iip] * wqy[iip];
+                        double sz3_wqz_tmp = sz_m[3 * block_size + iip] * wqz[iip];
+
+                        xrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqx_tmp;
+                        yrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqy_tmp;
+                        zrhocells_iy01_z0_v += sx_m_sy_01_v * sz0_wqz_tmp;
+
+                        xrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqx_tmp;
+                        yrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqy_tmp;
+                        zrhocells_iy01_z1_v += sx_m_sy_01_v * sz1_wqz_tmp;
+
+                        xrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqx_tmp;
+                        yrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqy_tmp;
+                        zrhocells_iy01_z2_v += sx_m_sy_01_v * sz2_wqz_tmp;
+
+                        xrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqx_tmp;
+                        yrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqy_tmp;
+                        zrhocells_iy01_z3_v += sx_m_sy_01_v * sz3_wqz_tmp;
+
+                        Vec sy_23_v = svld1_gather_s64index_f64(p_true, &sy_m[2 * block_size + iip], my_index);
+                        Vec sx_m_sy_23_v = sx_v * sy_23_v;
+
+                        xrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqx_tmp;
+                        yrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqy_tmp;
+                        zrhocells_iy23_z0_v += sx_m_sy_23_v * sz0_wqz_tmp;
+
+                        xrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqx_tmp;
+                        yrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqy_tmp;
+                        zrhocells_iy23_z1_v += sx_m_sy_23_v * sz1_wqz_tmp;
+
+                        xrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqx_tmp;
+                        yrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqy_tmp;
+                        zrhocells_iy23_z2_v += sx_m_sy_23_v * sz2_wqz_tmp;
+
+                        xrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqx_tmp;
+                        yrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqy_tmp;
+                        zrhocells_iy23_z3_v += sx_m_sy_23_v * sz3_wqz_tmp;
+                    }
+                }
+
+                xrhocells_iy01_z0_v.Store(p_true, &xrhocells[rho_offset_iy01_z0]);
+                yrhocells_iy01_z0_v.Store(p_true, &yrhocells[rho_offset_iy01_z0]);
+                zrhocells_iy01_z0_v.Store(p_true, &zrhocells[rho_offset_iy01_z0]);
+
+                xrhocells_iy01_z1_v.Store(p_true, &xrhocells[rho_offset_iy01_z1]);
+                yrhocells_iy01_z1_v.Store(p_true, &yrhocells[rho_offset_iy01_z1]);
+                zrhocells_iy01_z1_v.Store(p_true, &zrhocells[rho_offset_iy01_z1]);
+
+                xrhocells_iy01_z2_v.Store(p_true, &xrhocells[rho_offset_iy01_z2]);
+                yrhocells_iy01_z2_v.Store(p_true, &yrhocells[rho_offset_iy01_z2]);
+                zrhocells_iy01_z2_v.Store(p_true, &zrhocells[rho_offset_iy01_z2]);
+
+                xrhocells_iy01_z3_v.Store(p_true, &xrhocells[rho_offset_iy01_z3]);
+                yrhocells_iy01_z3_v.Store(p_true, &yrhocells[rho_offset_iy01_z3]);
+                zrhocells_iy01_z3_v.Store(p_true, &zrhocells[rho_offset_iy01_z3]);
+
+                xrhocells_iy23_z0_v.Store(p_true, &xrhocells[rho_offset_iy23_z0]);
+                yrhocells_iy23_z0_v.Store(p_true, &yrhocells[rho_offset_iy23_z0]);
+                zrhocells_iy23_z0_v.Store(p_true, &zrhocells[rho_offset_iy23_z0]);
+
+                xrhocells_iy23_z1_v.Store(p_true, &xrhocells[rho_offset_iy23_z1]);
+                yrhocells_iy23_z1_v.Store(p_true, &yrhocells[rho_offset_iy23_z1]);
+                zrhocells_iy23_z1_v.Store(p_true, &zrhocells[rho_offset_iy23_z1]);
+
+                xrhocells_iy23_z2_v.Store(p_true, &xrhocells[rho_offset_iy23_z2]);
+                yrhocells_iy23_z2_v.Store(p_true, &yrhocells[rho_offset_iy23_z2]);
+                zrhocells_iy23_z2_v.Store(p_true, &zrhocells[rho_offset_iy23_z2]);
+
+                xrhocells_iy23_z3_v.Store(p_true, &xrhocells[rho_offset_iy23_z3]);
+                yrhocells_iy23_z3_v.Store(p_true, &yrhocells[rho_offset_iy23_z3]);
+                zrhocells_iy23_z3_v.Store(p_true, &zrhocells[rho_offset_iy23_z3]);
+            }
+        }
+    }
+
+    for (int iz = 0; iz < len.z; ++iz)
+    {
+        for (int iy = 0; iy < len.y; ++iy)
+        {
+            for(int ix = 0; ix < len.x; ix++){
+                int arr_offset = ix + iy * xjstride + iz * xkstride;
+                int rho_offset = 8 * (ix + iy * lenx + iz * lenx * leny);
+
+                Vec xrhocells_0_3_v = Vec::Load(p_0_3, &xrhocells[0 + rho_offset]);
+                Vec xrhocells_4_7_v = Vec::Load(p_0_3, &xrhocells[4 + rho_offset]);
+                Vec jx_arr_0_3_v = Vec::Load(p_0_3, &jx_arr.p[0 + arr_offset]);
+                Vec jx_arr_4_7_v = Vec::Load(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+
+                Vec yrhocells_0_3_v = Vec::Load(p_0_3, &yrhocells[0 + rho_offset]);
+                Vec yrhocells_4_7_v = Vec::Load(p_0_3, &yrhocells[4 + rho_offset]);
+                Vec jy_arr_0_3_v = Vec::Load(p_0_3, &jy_arr.p[0 + arr_offset]);
+                Vec jy_arr_4_7_v = Vec::Load(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                
+                Vec zrhocells_0_3_v = Vec::Load(p_0_3, &zrhocells[0 + rho_offset]);
+                Vec zrhocells_4_7_v = Vec::Load(p_0_3, &zrhocells[4 + rho_offset]);
+                Vec jz_arr_0_3_v = Vec::Load(p_0_3, &jz_arr.p[0 + arr_offset]);
+                Vec jz_arr_4_7_v = Vec::Load(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+
+                jx_arr_0_3_v += xrhocells_0_3_v;
+                jy_arr_0_3_v += yrhocells_0_3_v;
+                jz_arr_0_3_v += zrhocells_0_3_v;
+                jx_arr_4_7_v += xrhocells_4_7_v;
+                jy_arr_4_7_v += yrhocells_4_7_v;
+                jz_arr_4_7_v += zrhocells_4_7_v;
+
+                jx_arr_0_3_v.Store(p_0_3, &jx_arr.p[0 + arr_offset]);
+                jy_arr_0_3_v.Store(p_0_3, &jy_arr.p[0 + arr_offset]);
+                jz_arr_0_3_v.Store(p_0_3, &jz_arr.p[0 + arr_offset]);
+
+                jx_arr_4_7_v.Store(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+                jy_arr_4_7_v.Store(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                jz_arr_4_7_v.Store(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+            }
+        }
+    }
+}
+
+template <int depos_order>
 void doDepositionShapeN_sve_rhocell_physort_order3 (const GetParticlePosition<PIdx>& GetPosition,
                         const amrex::ParticleReal * const wp,
                         const amrex::ParticleReal * const uxp,
