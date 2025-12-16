@@ -540,7 +540,15 @@ WarpX::InitData ()
 
     CheckKnownIssues();
 
-#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) || defined(PUSH_SVE_INCRSORT_ORDER3) || defined(PUSH_SVE_SME_INCRSORT_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3) || defined(SVE_RHOCELL_INCRSORT_ORDER3)
+#if defined(PUSH_SVE_SME_PHYSORT_ORDER3) || \
+    defined(PUSH_SVE_PHYSORT_ORDER3) || \
+    defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) || \
+    defined(PUSH_SVE_INCRSORT_ORDER3) || \
+    defined(PUSH_SVE_SME_INCRSORT_ORDER3) || \
+    defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || \
+    defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3) || \
+    defined(SVE_RHOCELL_INCRSORT_ORDER3) || \
+    defined(SVE_RHOCELL_SME_INCRSORT_ORDER3)
     mypc->InitBin();
 #endif
 }

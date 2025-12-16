@@ -11215,70 +11215,24 @@ inline void increment_sort_deposit(ParticleTileType& ptile,
             newbin_length++;
         }
     }
+}
 
-    // vector<int> b_ips(np, 0);
+inline void Mvec_compute_shape_factor_part_sve_order3(double* sx, MVec xmid, svbool_t p) __arm_preserves("za") __arm_streaming
+{
+    constexpr int VEC_LEN = 8;
 
-    // for (int l_node = 0; l_node < lenz; ++l_node)
-    // {
-    //     for (int k_node = 0; k_node < leny; ++k_node)
-    //     {
-    //         for (int j_node = 0; j_node < lenx; ++j_node)
-    //         {
-    //             int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
-    //             int& oldbin_offset = d_incr_bin_offset[old_bin];
-    //             int& oldbin_length = d_incr_bin_length[old_bin];
+    MVec j = svrintz_x(p, xmid);
+    MVec xint = xmid - j;
+    MVec one_minus_xint = 1.0 - xint;
 
-    //             int oldbin_outside_length = outside_bin_ip[old_bin].size();
-    //             vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
-
-    //             if (oldbin_offset == -1)
-    //             {
-    //                 for (int i = 0; i < oldbin_outside_length; ++i)
-    //                 {
-    //                     int ip = oldbin_outside_particles[i];
-    //                     if (b_ips[ip] == 1)
-    //                     {
-    //                         amrex::Abort("[1]there are two same particles.");
-    //                     }
-
-    //                     if (newbin[ip] != old_bin)
-    //                     {
-    //                         amrex::Abort("[1]the particle is not in the same bin.");
-    //                     }
-
-    //                     b_ips[ip] = 1;
-    //                 }
-    //             }
-    //             else
-    //             {
-    //                 for (int i = 0; i < oldbin_length; ++i)
-    //                 {
-    //                     int idx = oldbin_offset + i;
-    //                     int ip = d_local_index[idx];
-    //                     if (b_ips[ip] == 1)
-    //                     {
-    //                         amrex::Abort("[2]there are two same particles.");
-    //                     }
-
-    //                     if (newbin[ip] != old_bin)
-    //                     {
-    //                         amrex::Abort("[2]the particle is not in the same bin.");
-    //                     }
-
-    //                     b_ips[ip] = 1;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-    // for (int i = 0; i < np; ++i)
-    // {
-    //     if (b_ips[i] == 0)
-    //     {
-    //         amrex::Abort("not cover all particles.");
-    //     }
-    // }
+    MVec sx0 = (1.0 / 6.0) * one_minus_xint * one_minus_xint * one_minus_xint;
+    sx0.Store(p, &sx[0 * VEC_LEN]);
+    MVec sx1 = (2.0 / 3.0) - xint * xint * (1.0 - xint * 0.5);
+    sx1.Store(p, &sx[1 * VEC_LEN]);
+    MVec sx2 = (2.0 / 3.0) - one_minus_xint * one_minus_xint * (1.0 - 0.5 *one_minus_xint);
+    sx2.Store(p, &sx[2 * VEC_LEN]);
+    MVec sx3 = (1.0 / 6.0) * xint * xint * xint;
+    sx3.Store(p, &sx[3 * VEC_LEN]);
 }
 
 template <int depos_order>
@@ -11580,6 +11534,612 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3 (const GetParticlePosition<P
         for (int iy = 0; iy < len.y; ++iy)
         {
             for(int ix = 0; ix < len.x; ix++){
+                int arr_offset = ix + iy * xjstride + iz * xkstride;
+                int rho_offset = 8 * (ix + iy * lenx + iz * lenx * leny);
+
+                Vec xrhocells_0_3_v = Vec::Load(p_0_3, &xrhocells[0 + rho_offset]);
+                Vec xrhocells_4_7_v = Vec::Load(p_0_3, &xrhocells[4 + rho_offset]);
+                Vec jx_arr_0_3_v = Vec::Load(p_0_3, &jx_arr.p[0 + arr_offset]);
+                Vec jx_arr_4_7_v = Vec::Load(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+
+                Vec yrhocells_0_3_v = Vec::Load(p_0_3, &yrhocells[0 + rho_offset]);
+                Vec yrhocells_4_7_v = Vec::Load(p_0_3, &yrhocells[4 + rho_offset]);
+                Vec jy_arr_0_3_v = Vec::Load(p_0_3, &jy_arr.p[0 + arr_offset]);
+                Vec jy_arr_4_7_v = Vec::Load(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                
+                Vec zrhocells_0_3_v = Vec::Load(p_0_3, &zrhocells[0 + rho_offset]);
+                Vec zrhocells_4_7_v = Vec::Load(p_0_3, &zrhocells[4 + rho_offset]);
+                Vec jz_arr_0_3_v = Vec::Load(p_0_3, &jz_arr.p[0 + arr_offset]);
+                Vec jz_arr_4_7_v = Vec::Load(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+
+                jx_arr_0_3_v += xrhocells_0_3_v;
+                jy_arr_0_3_v += yrhocells_0_3_v;
+                jz_arr_0_3_v += zrhocells_0_3_v;
+                jx_arr_4_7_v += xrhocells_4_7_v;
+                jy_arr_4_7_v += yrhocells_4_7_v;
+                jz_arr_4_7_v += zrhocells_4_7_v;
+
+                jx_arr_0_3_v.Store(p_0_3, &jx_arr.p[0 + arr_offset]);
+                jy_arr_0_3_v.Store(p_0_3, &jy_arr.p[0 + arr_offset]);
+                jz_arr_0_3_v.Store(p_0_3, &jz_arr.p[0 + arr_offset]);
+
+                jx_arr_4_7_v.Store(p_0_3, &jx_arr.p[xjstride + arr_offset]);
+                jy_arr_4_7_v.Store(p_0_3, &jy_arr.p[xjstride + arr_offset]);
+                jz_arr_4_7_v.Store(p_0_3, &jz_arr.p[xjstride + arr_offset]);
+            }
+        }
+    }
+}
+
+template <int depos_order>
+__arm_new("za") inline void sve_rhocell_sme_incrsort_order3_kernel (
+    const amrex::ParticleReal * const wp,
+    const amrex::ParticleReal * const uxp,
+    const amrex::ParticleReal * const uyp,
+    const amrex::ParticleReal * const uzp,
+    const amrex::ParticleReal* mx,
+    const amrex::ParticleReal* my,
+    const amrex::ParticleReal* mz,
+    amrex::Real relative_time,
+    const amrex::XDim3 & dinv,
+    const amrex::XDim3 & xyzmin,
+    amrex::Real q,
+    std::vector<amrex::Real>& xrhocells,
+    std::vector<amrex::Real>& yrhocells,
+    std::vector<amrex::Real>& zrhocells,
+    int lenx,
+    int leny,
+    int lenz,
+    long np_to_deposit,
+    ParticleTileType& ptile,
+    vector<vector<int>>& outside_bin_ip
+) __arm_streaming {
+    constexpr int nshapes = 1 + 3;
+    constexpr int block_size = 8;
+    svbool_t p_true = svwhilelt_b64(0, 8);
+    svbool_t p_0_7 = svwhilelt_b64(0, 8);
+    svbool_t p_0_3 = svwhilelt_b64(0, 4);
+    MVec vzero(0);
+
+    const svuint64_t sm_index = svindex_u64(0, 8);
+
+    const amrex::Real invvol = dinv.x*dinv.y*dinv.z;
+
+    const amrex::Real clightsq = 1.0/PhysConst::c/PhysConst::c;
+
+    amrex::Real wqx[block_size];
+    amrex::Real wqy[block_size];
+    amrex::Real wqz[block_size];
+    double sx_m[nshapes * block_size] = {0.};
+    double sy_m[nshapes * block_size] = {0.};
+    double sz_m[nshapes * block_size] = {0.};
+
+    vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
+    std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
+    vector<int>& d_local_index = ptile.d_local_index;
+
+    int nomoved_ips_vec[8];
+    int move_pos = 0;
+    const int vl = svcntd();
+    long tmpbin[8];
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int& oldbin_offset = d_incr_bin_offset[old_bin];
+                int& oldbin_length = d_incr_bin_length[old_bin];
+
+                int oldbin_outside_length = outside_bin_ip[old_bin].size();
+                vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+                int rho_offset_iy01_z0 = (old_bin + 0 * lenx + 0 * lenx * leny) * 8;
+                int rho_offset_iy01_z1 = (old_bin + 0 * lenx + 1 * lenx * leny) * 8;
+                int rho_offset_iy01_z2 = (old_bin + 0 * lenx + 2 * lenx * leny) * 8;
+                int rho_offset_iy01_z3 = (old_bin + 0 * lenx + 3 * lenx * leny) * 8;
+
+                int rho_offset_iy23_z0 = (old_bin + 2 * lenx + 0 * lenx * leny) * 8;
+                int rho_offset_iy23_z1 = (old_bin + 2 * lenx + 1 * lenx * leny) * 8;
+                int rho_offset_iy23_z2 = (old_bin + 2 * lenx + 2 * lenx * leny) * 8;
+                int rho_offset_iy23_z3 = (old_bin + 2 * lenx + 3 * lenx * leny) * 8;
+
+                if (oldbin_offset == -1)
+                {
+                    svzero_za();
+                    for (int i = 0; i < oldbin_outside_length; i += vl)
+                    {
+                        svbool_t p_ip = svwhilelt_b64(i, oldbin_outside_length);
+                        intVec ip_v = svld1sw_s64(p_ip, &oldbin_outside_particles[i]);
+
+                        MVec uxp_v = svld1_gather_s64index_f64(p_ip, uxp, ip_v);
+                        MVec uyp_v = svld1_gather_s64index_f64(p_ip, uyp, ip_v);
+                        MVec uzp_v = svld1_gather_s64index_f64(p_ip, uzp, ip_v);
+                        MVec gaminv = 1 / (1 + uxp_v * uxp_v * clightsq
+                                                    + uyp_v * uyp_v * clightsq
+                                                    + uzp_v * uzp_v * clightsq).Sqrt();
+
+                        MVec vx_v = uxp_v * gaminv;
+                        MVec vy_v = uyp_v * gaminv;
+                        MVec vz_v = uzp_v * gaminv;
+
+                        MVec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+                        MVec wq_v = q * wp_v;
+
+                        MVec wqx_v = wq_v * invvol * vx_v;
+                        MVec wqy_v = wq_v * invvol * vy_v;
+                        MVec wqz_v = wq_v * invvol * vz_v;
+
+                        wqx_v.Store(p_ip, &wqx[0]);
+                        wqy_v.Store(p_ip, &wqy[0]);
+                        wqz_v.Store(p_ip, &wqz[0]);
+
+                        MVec xp = svld1_gather_s64index_f64(p_ip, mx, ip_v);
+                        MVec yp = svld1_gather_s64index_f64(p_ip, my, ip_v);
+                        MVec zp = svld1_gather_s64index_f64(p_ip, mz, ip_v);
+
+                        MVec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                        MVec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                        MVec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+
+                        Mvec_compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                        Mvec_compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                        Mvec_compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                        int rho_end = block_size < oldbin_outside_length - i ? block_size : oldbin_outside_length - i;
+                        for (int iip = 0; iip < rho_end; iip++)
+                        {
+                            MVec sx_v = svld1_gather_index(p_0_3, &sx_m[iip], sm_index);
+
+                            MVec sx_y0_v = sx_v * sy_m[0 * block_size + iip];
+                            MVec sx_y1_v = sx_v * sy_m[1 * block_size + iip];
+                            MVec sx_y_01_v = svsplice(p_0_3, sx_y0_v, sx_y1_v);
+                            
+                            MVec sx_y2_v = sx_v * sy_m[2 * block_size + iip];
+                            MVec sx_y3_v = sx_v * sy_m[3 * block_size + iip];
+                            MVec sx_y_23_v = svsplice(p_0_3, sx_y2_v, sx_y3_v);
+                            
+                            MVec sz_v = svld1_gather_index(p_0_3, &sz_m[iip], sm_index);
+
+                            MVec wqxsz_v = sz_v * wqx[iip];
+                            MVec wqysz_v = sz_v * wqy[iip];
+                            MVec wqzsz_v = sz_v * wqz[iip];
+
+                            MVec wqxysz_v = svsplice(p_0_3, wqxsz_v, wqysz_v);
+
+                            svmopa_za64_m(0, p_0_7, p_0_7, wqxysz_v, sx_y_01_v);
+                            svmopa_za64_m(1, p_0_7, p_0_7, wqxysz_v, sx_y_23_v);
+                            svmopa_za64_m(2, p_0_3, p_0_7, wqzsz_v, sx_y_01_v);
+                            svmopa_za64_m(3, p_0_3, p_0_7, wqzsz_v, sx_y_23_v);
+                        }                        
+                    }
+
+                    MVec wqx_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 0, 0);
+                    MVec wqx_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 0, 1);
+                    MVec wqx_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 0, 2);
+                    MVec wqx_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 0, 3);
+
+                    MVec wqy_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 0, 4);
+                    MVec wqy_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 0, 5);
+                    MVec wqy_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 0, 6);
+                    MVec wqy_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 0, 7);
+
+                    MVec wqz_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 2, 0);
+                    MVec wqz_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 2, 1);
+                    MVec wqz_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 2, 2);
+                    MVec wqz_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 2, 3);
+
+                    MVec wqx_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 1, 0);
+                    MVec wqx_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 1, 1);
+                    MVec wqx_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 1, 2);
+                    MVec wqx_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 1, 3);
+
+                    MVec wqy_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 1, 4);
+                    MVec wqy_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 1, 5);
+                    MVec wqy_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 1, 6);
+                    MVec wqy_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 1, 7);
+
+                    MVec wqz_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 3, 0);
+                    MVec wqz_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 3, 1);
+                    MVec wqz_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 3, 2);
+                    MVec wqz_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 3, 3);
+
+                    MVec xrhocells_iy01_z0_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z0]);
+                    MVec yrhocells_iy01_z0_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z0]);
+                    MVec zrhocells_iy01_z0_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z0]);
+
+                    xrhocells_iy01_z0_v += wqx_sx_y01_z0;
+                    yrhocells_iy01_z0_v += wqy_sx_y01_z0;
+                    zrhocells_iy01_z0_v += wqz_sx_y01_z0;
+
+                    xrhocells_iy01_z0_v.Store(p_true, &xrhocells[rho_offset_iy01_z0]);
+                    yrhocells_iy01_z0_v.Store(p_true, &yrhocells[rho_offset_iy01_z0]);
+                    zrhocells_iy01_z0_v.Store(p_true, &zrhocells[rho_offset_iy01_z0]);
+
+                    MVec xrhocells_iy01_z1_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z1]);
+                    MVec yrhocells_iy01_z1_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z1]);
+                    MVec zrhocells_iy01_z1_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z1]);
+                    
+                    xrhocells_iy01_z1_v += wqx_sx_y01_z1;
+                    yrhocells_iy01_z1_v += wqy_sx_y01_z1;
+                    zrhocells_iy01_z1_v += wqz_sx_y01_z1;
+                    
+                    xrhocells_iy01_z1_v.Store(p_true, &xrhocells[rho_offset_iy01_z1]);
+                    yrhocells_iy01_z1_v.Store(p_true, &yrhocells[rho_offset_iy01_z1]);
+                    zrhocells_iy01_z1_v.Store(p_true, &zrhocells[rho_offset_iy01_z1]);
+                        
+                    MVec xrhocells_iy01_z2_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z2]);
+                    MVec yrhocells_iy01_z2_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z2]);
+                    MVec zrhocells_iy01_z2_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z2]);
+                    
+                    xrhocells_iy01_z2_v += wqx_sx_y01_z2;
+                    yrhocells_iy01_z2_v += wqy_sx_y01_z2;
+                    zrhocells_iy01_z2_v += wqz_sx_y01_z2;
+                    
+                    xrhocells_iy01_z2_v.Store(p_true, &xrhocells[rho_offset_iy01_z2]);
+                    yrhocells_iy01_z2_v.Store(p_true, &yrhocells[rho_offset_iy01_z2]);
+                    zrhocells_iy01_z2_v.Store(p_true, &zrhocells[rho_offset_iy01_z2]);
+                            
+                    MVec xrhocells_iy01_z3_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z3]);
+                    MVec yrhocells_iy01_z3_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z3]);
+                    MVec zrhocells_iy01_z3_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z3]);
+                    
+                    xrhocells_iy01_z3_v += wqx_sx_y01_z3;
+                    yrhocells_iy01_z3_v += wqy_sx_y01_z3;
+                    zrhocells_iy01_z3_v += wqz_sx_y01_z3;
+                    
+                    xrhocells_iy01_z3_v.Store(p_true, &xrhocells[rho_offset_iy01_z3]);
+                    yrhocells_iy01_z3_v.Store(p_true, &yrhocells[rho_offset_iy01_z3]);
+                    zrhocells_iy01_z3_v.Store(p_true, &zrhocells[rho_offset_iy01_z3]);
+                    
+                    MVec xrhocells_iy23_z0_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z0]);
+                    MVec yrhocells_iy23_z0_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z0]);
+                    MVec zrhocells_iy23_z0_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z0]);
+                    
+                    xrhocells_iy23_z0_v += wqx_sx_y23_z0;
+                    yrhocells_iy23_z0_v += wqy_sx_y23_z0;
+                    zrhocells_iy23_z0_v += wqz_sx_y23_z0;
+                    
+                    xrhocells_iy23_z0_v.Store(p_true, &xrhocells[rho_offset_iy23_z0]);
+                    yrhocells_iy23_z0_v.Store(p_true, &yrhocells[rho_offset_iy23_z0]);
+                    zrhocells_iy23_z0_v.Store(p_true, &zrhocells[rho_offset_iy23_z0]);
+                    
+                    MVec xrhocells_iy23_z1_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z1]);
+                    MVec yrhocells_iy23_z1_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z1]);
+                    MVec zrhocells_iy23_z1_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z1]);
+                    
+                    xrhocells_iy23_z1_v += wqx_sx_y23_z1;
+                    yrhocells_iy23_z1_v += wqy_sx_y23_z1;
+                    zrhocells_iy23_z1_v += wqz_sx_y23_z1;
+                    
+                    xrhocells_iy23_z1_v.Store(p_true, &xrhocells[rho_offset_iy23_z1]);
+                    yrhocells_iy23_z1_v.Store(p_true, &yrhocells[rho_offset_iy23_z1]);
+                    zrhocells_iy23_z1_v.Store(p_true, &zrhocells[rho_offset_iy23_z1]);
+                    
+                    MVec xrhocells_iy23_z2_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z2]);
+                    MVec yrhocells_iy23_z2_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z2]);
+                    MVec zrhocells_iy23_z2_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z2]);
+                    
+                    xrhocells_iy23_z2_v += wqx_sx_y23_z2;
+                    yrhocells_iy23_z2_v += wqy_sx_y23_z2;
+                    zrhocells_iy23_z2_v += wqz_sx_y23_z2;
+                    
+                    xrhocells_iy23_z2_v.Store(p_true, &xrhocells[rho_offset_iy23_z2]);
+                    yrhocells_iy23_z2_v.Store(p_true, &yrhocells[rho_offset_iy23_z2]);
+                    zrhocells_iy23_z2_v.Store(p_true, &zrhocells[rho_offset_iy23_z2]);
+                    
+                    MVec xrhocells_iy23_z3_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z3]);
+                    MVec yrhocells_iy23_z3_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z3]);
+                    MVec zrhocells_iy23_z3_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z3]);
+                    
+                    xrhocells_iy23_z3_v += wqx_sx_y23_z3;
+                    yrhocells_iy23_z3_v += wqy_sx_y23_z3;
+                    zrhocells_iy23_z3_v += wqz_sx_y23_z3;
+                    
+                    xrhocells_iy23_z3_v.Store(p_true, &xrhocells[rho_offset_iy23_z3]);
+                    yrhocells_iy23_z3_v.Store(p_true, &yrhocells[rho_offset_iy23_z3]);
+                    zrhocells_iy23_z3_v.Store(p_true, &zrhocells[rho_offset_iy23_z3]);
+                }
+                else
+                {
+                    svzero_za();
+                    for (int i = 0; i < oldbin_length; i += vl)
+                    {
+                        svbool_t p_ip = svwhilelt_b64(i, oldbin_length);
+                        int idx = oldbin_offset + i;
+                        intVec ip_v = svld1sw_s64(p_ip, &d_local_index[idx]);
+
+                        MVec uxp_v = svld1_gather_s64index_f64(p_ip, uxp, ip_v);
+                        MVec uyp_v = svld1_gather_s64index_f64(p_ip, uyp, ip_v);
+                        MVec uzp_v = svld1_gather_s64index_f64(p_ip, uzp, ip_v);
+                        MVec gaminv = 1 / (1 + uxp_v * uxp_v * clightsq
+                                                    + uyp_v * uyp_v * clightsq
+                                                    + uzp_v * uzp_v * clightsq).Sqrt();
+
+                        MVec vx_v = uxp_v * gaminv;
+                        MVec vy_v = uyp_v * gaminv;
+                        MVec vz_v = uzp_v * gaminv;
+
+                        MVec wp_v = svld1_gather_s64index_f64(p_ip, wp, ip_v);
+                        MVec wq_v = q * wp_v;
+
+                        MVec wqx_v = wq_v * invvol * vx_v;
+                        MVec wqy_v = wq_v * invvol * vy_v;
+                        MVec wqz_v = wq_v * invvol * vz_v;
+
+                        wqx_v.Store(p_ip, &wqx[0]);
+                        wqy_v.Store(p_ip, &wqy[0]);
+                        wqz_v.Store(p_ip, &wqz[0]);
+
+                        MVec xp = svld1_gather_s64index_f64(p_ip, mx, ip_v);
+                        MVec yp = svld1_gather_s64index_f64(p_ip, my, ip_v);
+                        MVec zp = svld1_gather_s64index_f64(p_ip, mz, ip_v);
+
+                        MVec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+                        MVec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+                        MVec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+
+                        Mvec_compute_shape_factor_part_sve_order3(&sx_m[0], xmid, p_ip);
+                        Mvec_compute_shape_factor_part_sve_order3(&sy_m[0], ymid, p_ip);
+                        Mvec_compute_shape_factor_part_sve_order3(&sz_m[0], zmid, p_ip);
+
+                        int rho_end = block_size < oldbin_length - i ? block_size : oldbin_length - i;
+                        for (int iip = 0; iip < rho_end; iip++)
+                        {
+                            MVec sx_v = svld1_gather_index(p_0_3, &sx_m[iip], sm_index);
+
+                            MVec sx_y0_v = sx_v * sy_m[0 * block_size + iip];
+                            MVec sx_y1_v = sx_v * sy_m[1 * block_size + iip];
+                            MVec sx_y_01_v = svsplice(p_0_3, sx_y0_v, sx_y1_v);
+                            
+                            MVec sx_y2_v = sx_v * sy_m[2 * block_size + iip];
+                            MVec sx_y3_v = sx_v * sy_m[3 * block_size + iip];
+                            MVec sx_y_23_v = svsplice(p_0_3, sx_y2_v, sx_y3_v);
+                            
+                            MVec sz_v = svld1_gather_index(p_0_3, &sz_m[iip], sm_index);
+
+                            MVec wqxsz_v = sz_v * wqx[iip];
+                            MVec wqysz_v = sz_v * wqy[iip];
+                            MVec wqzsz_v = sz_v * wqz[iip];
+
+                            MVec wqxysz_v = svsplice(p_0_3, wqxsz_v, wqysz_v);
+
+                            svmopa_za64_m(0, p_0_7, p_0_7, wqxysz_v, sx_y_01_v);
+                            svmopa_za64_m(1, p_0_7, p_0_7, wqxysz_v, sx_y_23_v);
+                            svmopa_za64_m(2, p_0_3, p_0_7, wqzsz_v, sx_y_01_v);
+                            svmopa_za64_m(3, p_0_3, p_0_7, wqzsz_v, sx_y_23_v);
+                        }
+                    }
+
+                    MVec wqx_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 0, 0);
+                    MVec wqx_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 0, 1);
+                    MVec wqx_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 0, 2);
+                    MVec wqx_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 0, 3);
+
+                    MVec wqy_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 0, 4);
+                    MVec wqy_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 0, 5);
+                    MVec wqy_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 0, 6);
+                    MVec wqy_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 0, 7);
+
+                    MVec wqz_sx_y01_z0 = svread_hor_za64_m(vzero, p_0_7, 2, 0);
+                    MVec wqz_sx_y01_z1 = svread_hor_za64_m(vzero, p_0_7, 2, 1);
+                    MVec wqz_sx_y01_z2 = svread_hor_za64_m(vzero, p_0_7, 2, 2);
+                    MVec wqz_sx_y01_z3 = svread_hor_za64_m(vzero, p_0_7, 2, 3);
+
+                    MVec wqx_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 1, 0);
+                    MVec wqx_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 1, 1);
+                    MVec wqx_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 1, 2);
+                    MVec wqx_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 1, 3);
+
+                    MVec wqy_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 1, 4);
+                    MVec wqy_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 1, 5);
+                    MVec wqy_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 1, 6);
+                    MVec wqy_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 1, 7);
+
+                    MVec wqz_sx_y23_z0 = svread_hor_za64_m(vzero, p_0_7, 3, 0);
+                    MVec wqz_sx_y23_z1 = svread_hor_za64_m(vzero, p_0_7, 3, 1);
+                    MVec wqz_sx_y23_z2 = svread_hor_za64_m(vzero, p_0_7, 3, 2);
+                    MVec wqz_sx_y23_z3 = svread_hor_za64_m(vzero, p_0_7, 3, 3);
+
+                    MVec xrhocells_iy01_z0_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z0]);
+                    MVec yrhocells_iy01_z0_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z0]);
+                    MVec zrhocells_iy01_z0_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z0]);
+
+                    xrhocells_iy01_z0_v += wqx_sx_y01_z0;
+                    yrhocells_iy01_z0_v += wqy_sx_y01_z0;
+                    zrhocells_iy01_z0_v += wqz_sx_y01_z0;
+
+                    xrhocells_iy01_z0_v.Store(p_true, &xrhocells[rho_offset_iy01_z0]);
+                    yrhocells_iy01_z0_v.Store(p_true, &yrhocells[rho_offset_iy01_z0]);
+                    zrhocells_iy01_z0_v.Store(p_true, &zrhocells[rho_offset_iy01_z0]);
+
+                    MVec xrhocells_iy01_z1_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z1]);
+                    MVec yrhocells_iy01_z1_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z1]);
+                    MVec zrhocells_iy01_z1_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z1]);
+                    
+                    xrhocells_iy01_z1_v += wqx_sx_y01_z1;
+                    yrhocells_iy01_z1_v += wqy_sx_y01_z1;
+                    zrhocells_iy01_z1_v += wqz_sx_y01_z1;
+                    
+                    xrhocells_iy01_z1_v.Store(p_true, &xrhocells[rho_offset_iy01_z1]);
+                    yrhocells_iy01_z1_v.Store(p_true, &yrhocells[rho_offset_iy01_z1]);
+                    zrhocells_iy01_z1_v.Store(p_true, &zrhocells[rho_offset_iy01_z1]);
+                        
+                    MVec xrhocells_iy01_z2_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z2]);
+                    MVec yrhocells_iy01_z2_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z2]);
+                    MVec zrhocells_iy01_z2_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z2]);
+                    
+                    xrhocells_iy01_z2_v += wqx_sx_y01_z2;
+                    yrhocells_iy01_z2_v += wqy_sx_y01_z2;
+                    zrhocells_iy01_z2_v += wqz_sx_y01_z2;
+                    
+                    xrhocells_iy01_z2_v.Store(p_true, &xrhocells[rho_offset_iy01_z2]);
+                    yrhocells_iy01_z2_v.Store(p_true, &yrhocells[rho_offset_iy01_z2]);
+                    zrhocells_iy01_z2_v.Store(p_true, &zrhocells[rho_offset_iy01_z2]);
+                            
+                    MVec xrhocells_iy01_z3_v = MVec::Load(p_true, &xrhocells[rho_offset_iy01_z3]);
+                    MVec yrhocells_iy01_z3_v = MVec::Load(p_true, &yrhocells[rho_offset_iy01_z3]);
+                    MVec zrhocells_iy01_z3_v = MVec::Load(p_true, &zrhocells[rho_offset_iy01_z3]);
+                    
+                    xrhocells_iy01_z3_v += wqx_sx_y01_z3;
+                    yrhocells_iy01_z3_v += wqy_sx_y01_z3;
+                    zrhocells_iy01_z3_v += wqz_sx_y01_z3;
+                    
+                    xrhocells_iy01_z3_v.Store(p_true, &xrhocells[rho_offset_iy01_z3]);
+                    yrhocells_iy01_z3_v.Store(p_true, &yrhocells[rho_offset_iy01_z3]);
+                    zrhocells_iy01_z3_v.Store(p_true, &zrhocells[rho_offset_iy01_z3]);
+                    
+                    MVec xrhocells_iy23_z0_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z0]);
+                    MVec yrhocells_iy23_z0_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z0]);
+                    MVec zrhocells_iy23_z0_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z0]);
+                    
+                    xrhocells_iy23_z0_v += wqx_sx_y23_z0;
+                    yrhocells_iy23_z0_v += wqy_sx_y23_z0;
+                    zrhocells_iy23_z0_v += wqz_sx_y23_z0;
+                    
+                    xrhocells_iy23_z0_v.Store(p_true, &xrhocells[rho_offset_iy23_z0]);
+                    yrhocells_iy23_z0_v.Store(p_true, &yrhocells[rho_offset_iy23_z0]);
+                    zrhocells_iy23_z0_v.Store(p_true, &zrhocells[rho_offset_iy23_z0]);
+                    
+                    MVec xrhocells_iy23_z1_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z1]);
+                    MVec yrhocells_iy23_z1_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z1]);
+                    MVec zrhocells_iy23_z1_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z1]);
+                    
+                    xrhocells_iy23_z1_v += wqx_sx_y23_z1;
+                    yrhocells_iy23_z1_v += wqy_sx_y23_z1;
+                    zrhocells_iy23_z1_v += wqz_sx_y23_z1;
+                    
+                    xrhocells_iy23_z1_v.Store(p_true, &xrhocells[rho_offset_iy23_z1]);
+                    yrhocells_iy23_z1_v.Store(p_true, &yrhocells[rho_offset_iy23_z1]);
+                    zrhocells_iy23_z1_v.Store(p_true, &zrhocells[rho_offset_iy23_z1]);
+                    
+                    MVec xrhocells_iy23_z2_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z2]);
+                    MVec yrhocells_iy23_z2_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z2]);
+                    MVec zrhocells_iy23_z2_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z2]);
+                    
+                    xrhocells_iy23_z2_v += wqx_sx_y23_z2;
+                    yrhocells_iy23_z2_v += wqy_sx_y23_z2;
+                    zrhocells_iy23_z2_v += wqz_sx_y23_z2;
+                    
+                    xrhocells_iy23_z2_v.Store(p_true, &xrhocells[rho_offset_iy23_z2]);
+                    yrhocells_iy23_z2_v.Store(p_true, &yrhocells[rho_offset_iy23_z2]);
+                    zrhocells_iy23_z2_v.Store(p_true, &zrhocells[rho_offset_iy23_z2]);
+                    
+                    MVec xrhocells_iy23_z3_v = MVec::Load(p_true, &xrhocells[rho_offset_iy23_z3]);
+                    MVec yrhocells_iy23_z3_v = MVec::Load(p_true, &yrhocells[rho_offset_iy23_z3]);
+                    MVec zrhocells_iy23_z3_v = MVec::Load(p_true, &zrhocells[rho_offset_iy23_z3]);
+                    
+                    xrhocells_iy23_z3_v += wqx_sx_y23_z3;
+                    yrhocells_iy23_z3_v += wqy_sx_y23_z3;
+                    zrhocells_iy23_z3_v += wqz_sx_y23_z3;
+                    
+                    xrhocells_iy23_z3_v.Store(p_true, &xrhocells[rho_offset_iy23_z3]);
+                    yrhocells_iy23_z3_v.Store(p_true, &yrhocells[rho_offset_iy23_z3]);
+                    zrhocells_iy23_z3_v.Store(p_true, &zrhocells[rho_offset_iy23_z3]);
+                }
+            }
+        }
+    }
+}
+
+template <int depos_order>
+void doDepositionShapeN_sve_rhocell_sme_incrsort_order3 (const GetParticlePosition<PIdx>& GetPosition,
+                        const amrex::ParticleReal * const wp,
+                        const amrex::ParticleReal * const uxp,
+                        const amrex::ParticleReal * const uyp,
+                        const amrex::ParticleReal * const uzp,
+                        const int* ion_lev,
+                        amrex::FArrayBox& jx_fab,
+                        amrex::FArrayBox& jy_fab,
+                        amrex::FArrayBox& jz_fab,
+                        long np_to_deposit,
+                        amrex::Real relative_time,
+                        const amrex::XDim3 & dinv,
+                        const amrex::XDim3 & xyzmin,
+                        amrex::Dim3 len,
+                        amrex::Real q,
+                        ParticleTileType& ptile,
+                        [[maybe_unused]]int n_rz_azimuthal_modes)
+{
+    using namespace amrex::literals;
+
+    amrex::Array4<amrex::Real> const& jx_arr = jx_fab.array();
+    amrex::Array4<amrex::Real> const& jy_arr = jy_fab.array();
+    amrex::Array4<amrex::Real> const& jz_arr = jz_fab.array();
+    
+    const amrex::ParticleReal* mx = GetPosition.m_x;
+    const amrex::ParticleReal* my = GetPosition.m_y;
+    const amrex::ParticleReal* mz = GetPosition.m_z;
+    
+    // 预计算网格步长
+    const int xjstride = jx_arr.jstride;
+    const int xkstride = jx_arr.kstride;
+
+    const int lenx = len.x;
+    const int leny = len.y;
+    const int lenz = len.z;
+    const int nrho = lenx * leny * lenz;
+
+    std::vector<amrex::Real> xrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> yrhocells(8 * nrho, 0.0);
+    std::vector<amrex::Real> zrhocells(8 * nrho, 0.0);
+
+    int thread_num = omp_get_thread_num();
+    int m_init_np = WarpX::GetInstance().m_init_np;
+    int* newbin = WarpX::GetInstance().newbin + thread_num * m_init_np;
+
+    const amrex::Real clightsq = 1.0_rt/PhysConst::c/PhysConst::c;
+    const int vl = svcntd();
+
+    for(long ip = 0; ip < np_to_deposit; ip += vl){ 
+        svbool_t p_ip = svwhilelt_b64(ip, np_to_deposit);
+        
+        Vec uxp_v = Vec::Load(p_ip, &uxp[ip]);
+        Vec uyp_v = Vec::Load(p_ip, &uyp[ip]);
+        Vec uzp_v = Vec::Load(p_ip, &uzp[ip]);
+        Vec gaminv = 1._rt / (1._rt + uxp_v * uxp_v * clightsq
+                                    + uyp_v * uyp_v * clightsq
+                                    + uzp_v * uzp_v * clightsq).Sqrt();
+        Vec vx_v = uxp_v * gaminv;
+        Vec vy_v = uyp_v * gaminv;
+        Vec vz_v = uzp_v * gaminv;        
+
+        Vec xp = Vec::Load(p_ip, &mx[ip]);
+        Vec yp = Vec::Load(p_ip, &my[ip]);
+        Vec zp = Vec::Load(p_ip, &mz[ip]);
+
+        Vec xmid = ((xp - xyzmin.x) + relative_time * vx_v) * dinv.x;
+        Vec ymid = ((yp - xyzmin.y) + relative_time * vy_v) * dinv.y;
+        Vec zmid = ((zp - xyzmin.z) + relative_time * vz_v) * dinv.z;
+        
+        intVec j_cellv = svcvt_s64_f64_z(p_ip, xmid) - 1;
+        intVec k_cellv = svcvt_s64_f64_z(p_ip, ymid) - 1;
+        intVec l_cellv = svcvt_s64_f64_z(p_ip, zmid) - 1;
+
+        intVec newbin_v = j_cellv + k_cellv * lenx + l_cellv * lenx * leny;
+        svst1w(p_ip, newbin + ip, newbin_v);
+    }
+
+    int num_bins = lenx * leny * lenz;
+    vector<vector<int>> outside_bin_ip(num_bins);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+
+    sve_rhocell_sme_incrsort_order3_kernel<3>(
+        wp, uxp, uyp, uzp,
+        mx, my, mz,
+        relative_time, dinv, xyzmin, q,
+        xrhocells, yrhocells, zrhocells, 
+        lenx, leny, lenz,
+        np_to_deposit, ptile, outside_bin_ip);
+
+    svbool_t p_0_3 = svwhilelt_b64(0, 4);
+    for (int iz = 0; iz < lenz; ++iz)
+    {
+        for (int iy = 0; iy < leny; ++iy)
+        {
+            for(int ix = 0; ix < lenx; ix++){
                 int arr_offset = ix + iy * xjstride + iz * xkstride;
                 int rho_offset = 8 * (ix + iy * lenx + iz * lenx * leny);
 
@@ -12132,24 +12692,6 @@ void doDepositionShapeN_sve_rhocell_physort_order3 (const GetParticlePosition<PI
             }
         }
     }
-}
-
-inline void Mvec_compute_shape_factor_part_sve_order3(double* sx, MVec xmid, svbool_t p) __arm_preserves("za") __arm_streaming
-{
-    constexpr int VEC_LEN = 8;
-
-    MVec j = svrintz_x(p, xmid);
-    MVec xint = xmid - j;
-    MVec one_minus_xint = 1.0 - xint;
-
-    MVec sx0 = (1.0 / 6.0) * one_minus_xint * one_minus_xint * one_minus_xint;
-    sx0.Store(p, &sx[0 * VEC_LEN]);
-    MVec sx1 = (2.0 / 3.0) - xint * xint * (1.0 - xint * 0.5);
-    sx1.Store(p, &sx[1 * VEC_LEN]);
-    MVec sx2 = (2.0 / 3.0) - one_minus_xint * one_minus_xint * (1.0 - 0.5 *one_minus_xint);
-    sx2.Store(p, &sx[2 * VEC_LEN]);
-    MVec sx3 = (1.0 / 6.0) * xint * xint * xint;
-    sx3.Store(p, &sx[3 * VEC_LEN]);
 }
 
 template <int depos_order>
