@@ -9401,15 +9401,16 @@ void increment_sort(ParticleTileType& ptile, int* newbin, long np, int lenx, int
                 // }
 
                 // 从后往前填补无效的位置
-                int oldbin_tail = oldbin_offset + oldbin_length;
+                int oldbin_tail = oldbin_offset + oldbin_length - 1;
                 int invalid_tail = invalid_num - 1;
 
                 while (invalid_tail >= 0 && oldbin_tail - invalid_idx[invalid_tail] < vlf)
                 {
                     int idx = invalid_idx[invalid_tail];
-                    oldbin_tail--;
                     d_local_index[idx] = d_local_index[oldbin_tail];
                     d_local_index[oldbin_tail] = ParticleTileType::INVALID_PARTICLE_ID;
+
+                    oldbin_tail--;
                     invalid_tail--;
                 }
 
@@ -9419,23 +9420,23 @@ void increment_sort(ParticleTileType& ptile, int* newbin, long np, int lenx, int
                     int32_t num_invalid = svcntp_b32(p_ip, p_ip);
 
                     svint32_t idx_v = svld1_s32(p_ip, invalid_idx + invalid_tail + 1 - num_invalid);
-                    oldbin_tail -= num_invalid;
-                    svint32_t ip_v = svld1_s32(p_ip, d_local_index.data() + oldbin_tail);
+                    svint32_t ip_v = svld1_s32(p_ip, d_local_index.data() + oldbin_tail + 1 - num_invalid);
                     svst1_scatter_s32index_s32(p_ip, d_local_index.data(), idx_v, ip_v);
-                    svst1_s32(p_ip, d_local_index.data() + oldbin_tail, invalid_particle_id_v);
+                    svst1_s32(p_ip, d_local_index.data() + oldbin_tail + 1 - num_invalid, invalid_particle_id_v);
+                    oldbin_tail -= num_invalid;
                     invalid_tail -= num_invalid;
                 }
 
                 // for (int i = invalid_num - 1; i >= 0; --i)
                 // {
                 //     int idx = invalid_idx[i];
-                //     oldbin_tail--;
- 
                 //     d_local_index[idx] = d_local_index[oldbin_tail];
                 //     d_local_index[oldbin_tail] = ParticleTileType::INVALID_PARTICLE_ID;
+
+                //     oldbin_tail--;
                 // }
 
-                oldbin_length = oldbin_tail - oldbin_offset;
+                oldbin_length = oldbin_tail + 1 - oldbin_offset;
             }
         }
     }
@@ -9474,6 +9475,83 @@ void increment_sort(ParticleTileType& ptile, int* newbin, long np, int lenx, int
             newbin_length++;
         }
     }
+
+#if defined(MY_TEST_ORDER3) || defined(PUSH_TEST_ORDER3)
+    vector<int> b_ips(np, 0);
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int& oldbin_offset = d_incr_bin_offset[old_bin];
+                int& oldbin_length = d_incr_bin_length[old_bin];
+
+                int oldbin_outside_length = outside_bin_ip[old_bin].size();
+                vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+                if (oldbin_offset == -1)
+                {
+                    for (int i = 0; i < oldbin_outside_length; ++i)
+                    {
+                        int ip = oldbin_outside_particles[i];
+                        if (ip == ParticleTileType::INVALID_PARTICLE_ID)
+                        {
+                            amrex::Abort("[1]the particle is invalid.");
+                        }
+
+                        if (b_ips[ip] == 1)
+                        {
+                            amrex::Abort("[1]there are two same particles.");
+                        }
+
+                        if (newbin[ip] != old_bin)
+                        {
+                            amrex::Abort("[1]the particle is not in the same bin.");
+                        }
+
+                        b_ips[ip] = 1;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < oldbin_length; ++i)
+                    {
+                        int idx = oldbin_offset + i;
+                        int ip = d_local_index[idx];
+
+                        if (ip == ParticleTileType::INVALID_PARTICLE_ID)
+                        {
+                            amrex::Abort("[2]the particle is invalid.");
+                        }
+
+                        if (b_ips[ip] == 1)
+                        {
+                            amrex::Abort("[2]there are two same particles.");
+                        }
+
+                        if (newbin[ip] != old_bin)
+                        {
+                            amrex::Abort("[2]the particle is not in the same bin.");
+                        }
+
+                        b_ips[ip] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < np; ++i)
+    {
+        if (b_ips[i] == 0)
+        {
+            amrex::Abort("not cover all particles.");
+        }
+    }
+#endif
 }
 
 void
