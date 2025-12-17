@@ -4760,12 +4760,22 @@ PhysicalParticleContainer::Evolve (int lev,
                         // printf("%d ", ip);
                         for (long test_ip = 0; test_ip < np_to_push; ++test_ip)
                         {
-                            ux_err = fabs(ux_test[test_ip] - ux[ip]) / fabs(ux_test[test_ip]);
-                            uy_err = fabs(uy_test[test_ip] - uy[ip]) / fabs(uy_test[test_ip]);
-                            uz_err = fabs(uz_test[test_ip] - uz[ip]) / fabs(uz_test[test_ip]);
-                            mx_err = fabs(m_x_test[test_ip] - m_x[ip]) / fabs(m_x_test[test_ip]);
-                            my_err = fabs(m_y_test[test_ip] - m_y[ip]) / fabs(m_y_test[test_ip]);
-                            mz_err = fabs(m_z_test[test_ip] - m_z[ip]) / fabs(m_z_test[test_ip]);
+                            if (ux_test[test_ip] == 0 || uy_test[test_ip] == 0 || uz_test[test_ip] == 0 || m_x_test[test_ip] == 0 || m_y_test[test_ip] == 0 || m_z_test[test_ip] == 0)
+                            {
+                                ux_err = fabs(ux_test[test_ip] - ux[ip]);
+                                uy_err = fabs(uy_test[test_ip] - uy[ip]);
+                                uz_err = fabs(uz_test[test_ip] - uz[ip]);
+                                mx_err = fabs(m_x_test[test_ip] - m_x[ip]);
+                                my_err = fabs(m_y_test[test_ip] - m_y[ip]);
+                                mz_err = fabs(m_z_test[test_ip] - m_z[ip]);
+                            } else {
+                                ux_err = fabs(ux_test[test_ip] - ux[ip]) / fabs(ux_test[test_ip]);
+                                uy_err = fabs(uy_test[test_ip] - uy[ip]) / fabs(uy_test[test_ip]);
+                                uz_err = fabs(uz_test[test_ip] - uz[ip]) / fabs(uz_test[test_ip]);
+                                mx_err = fabs(m_x_test[test_ip] - m_x[ip]) / fabs(m_x_test[test_ip]);
+                                my_err = fabs(m_y_test[test_ip] - m_y[ip]) / fabs(m_y_test[test_ip]);
+                                mz_err = fabs(m_z_test[test_ip] - m_z[ip]) / fabs(m_z_test[test_ip]);
+                            }
 
                             if (ux_err < 1e-8 && uy_err < 1e-8 && uz_err < 1e-8 && mx_err < 1e-8 && my_err < 1e-8 && mz_err < 1e-8)
                             {
