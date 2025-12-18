@@ -9305,20 +9305,34 @@ void increment_sort(ParticleTileType& ptile, int* newbin, long np, int lenx, int
 
     // Stage 2 & 3.1: Identify Moved Existing Particles and Delete From Old Cell
     // 从 d_old_outside_index 遍历超出 realbox 的粒子，这些粒子必定为移动粒子
-    for (int i = 0; i < d_old_outside_index.size(); ++i)
+    int old_outside_num = d_old_outside_index.size();
+    for (int i = 0; i < old_outside_num; i += vlf)
     {
-        amrex::Abort("[1]GOTO Deposit");               // deposit 才需要的功能
-        int ip = d_old_outside_index[i];
+        svbool_t p_ip = svwhilelt_b32(i, old_outside_num);
+        svint32_t ip_v = svld1_s32(p_ip, &d_old_outside_index[i]);
+        
+        svbool_t ip_valid = svcmplt_s32(p_ip, ip_v, np_v);
+        int32_t valid_num = svcntp_b32(ip_valid, ip_valid);
+        svbool_t p_valid = svwhilelt_b32(0, valid_num);
 
-        if (ip >= np)
-        {
-            continue;
-        }
-        else
-        {
-            pending_moves[pending_moves_num++] = ip;
-        }
+        svint32_t old_outside_ips_v = svcompact(ip_valid, ip_v);
+        svst1_s32(p_valid, pending_moves + pending_moves_num, old_outside_ips_v);
+        pending_moves_num += valid_num;
     }
+
+    // for (int i = 0; i < d_old_outside_index.size(); ++i)
+    // {
+    //     int ip = d_old_outside_index[i];
+
+    //     if (ip >= np)
+    //     {
+    //         continue;
+    //     }
+    //     else
+    //     {
+    //         pending_moves[pending_moves_num++] = ip;
+    //     }
+    // }
 
     // 从 d_local_index 遍历 realbox 内的粒子，这些粒子可能为移动粒子
     for (int l_node = 0; l_node < lenz; ++l_node)
