@@ -364,6 +364,14 @@ public:
     int* pending_moves;
     int* invalid_idx;
 
+    amrex::Real* wqx;
+    amrex::Real* wqy;
+    amrex::Real* wqz;
+
+    double* sx_m;
+    double* sy_m;
+    double* sz_m;
+
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mx_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_my_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_mz_buffer_arr;

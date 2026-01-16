@@ -514,6 +514,12 @@ WarpX::~WarpX ()
 
     free(aos_arr);
     free(int_buffer);
+    free(wqx);
+    free(wqy);
+    free(wqz);
+    free(sx_m);
+    free(sy_m);
+    free(sz_m);
 }
 
 // USER DEFINED 大数组解决
@@ -533,6 +539,13 @@ WarpX::InitTempVectors()
     newbin = (int*)malloc(m_init_np * max_threads * sizeof(int));
     pending_moves = (int*)malloc(m_init_np * max_threads * sizeof(int));
     invalid_idx = (int*)malloc(m_init_np * max_threads * sizeof(int));
+    wqx = (amrex::Real*)malloc(m_init_np * max_threads * sizeof(amrex::Real));
+    wqy = (amrex::Real*)malloc(m_init_np * max_threads * sizeof(amrex::Real));
+    wqz = (amrex::Real*)malloc(m_init_np * max_threads * sizeof(amrex::Real));
+
+    sx_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
+    sy_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
+    sz_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
 #endif
 
 #if defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3)
