@@ -1643,7 +1643,8 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
-                    doDepositionShapeN_sve_rhocell_sme_binsort_physort_order3<3>(
+                    // doDepositionShapeN_sve_rhocell_sme_binsort_physort_order3<3>(
+                    doDepositionShapeN_sve_rhocell_sme_binsort_physort_order3_eurosys<3>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
