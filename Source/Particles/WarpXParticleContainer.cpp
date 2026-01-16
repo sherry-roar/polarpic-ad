@@ -1522,7 +1522,8 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #ifdef SVE_RHOCELL_ORDER3
                     printf("RUN SVE_RHOCELL_ORDER3\n");
                     const Dim3 len = length(tilebox);
-                    doDepositionShapeN_sve_rhocell_order3<3>(
+                    // doDepositionShapeN_sve_rhocell_order3<3>(
+                    doDepositionShapeN_sve_rhocell_order3_eurosys<3>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,

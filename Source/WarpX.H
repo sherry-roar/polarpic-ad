@@ -363,6 +363,7 @@ public:
     int* newbin;
     int* pending_moves;
     int* invalid_idx;
+    long* rho_bin;
 
     amrex::Real* wqx;
     amrex::Real* wqy;
