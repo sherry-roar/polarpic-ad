@@ -11718,6 +11718,11 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3 (const GetParticlePosition<P
                 int oldbin_outside_length = outside_bin_ip[old_bin].size();
                 vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
 
+                if (oldbin_length == 0 && oldbin_outside_length == 0)
+                {
+                    continue;
+                }
+
                 if (oldbin_offset == -1)
                 {
                     for (int i = 0; i < oldbin_outside_length; i += vl)
@@ -12072,6 +12077,11 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3_eurosys (const GetParticlePo
                 int oldbin_outside_length = outside_bin_ip[old_bin].size();
                 vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
 
+                if (oldbin_length == 0 && oldbin_outside_length == 0)
+                {
+                    continue;
+                }
+
                 if (oldbin_offset == -1)
                 {
                     for (int i = 0; i < oldbin_outside_length; i++)
@@ -12250,6 +12260,11 @@ __arm_new("za") inline void sve_rhocell_sme_incrsort_order3_kernel (
 
                 int oldbin_outside_length = outside_bin_ip[old_bin].size();
                 vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+                if (oldbin_length == 0 && oldbin_outside_length == 0)
+                {
+                    continue;
+                }
 
                 int rho_offset_iy01_z0 = (old_bin + 0 * lenx + 0 * lenx * leny) * 8;
                 int rho_offset_iy01_z1 = (old_bin + 0 * lenx + 1 * lenx * leny) * 8;
@@ -12792,6 +12807,7 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3 (const GetParticlePositi
     }
 }
 
+
 template <int depos_order>
 __arm_new("za") inline void sve_rhocell_sme_incrsort_order3_eurosys_kernel (
     const amrex::ParticleReal * const wp,
@@ -12855,6 +12871,11 @@ __arm_new("za") inline void sve_rhocell_sme_incrsort_order3_eurosys_kernel (
 
                 int oldbin_outside_length = outside_bin_ip[old_bin].size();
                 vector<int>& oldbin_outside_particles = outside_bin_ip[old_bin];
+
+                if (oldbin_length == 0 && oldbin_outside_length == 0)
+                {
+                    continue;
+                }
 
                 int rho_offset_iy01_z0 = (old_bin + 0 * lenx + 0 * lenx * leny) * 8;
                 int rho_offset_iy01_z1 = (old_bin + 0 * lenx + 1 * lenx * leny) * 8;
