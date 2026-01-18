@@ -1483,6 +1483,7 @@ WarpX::ReadParameters ()
 
         utils::parser::queryWithParser(pp_warpx, "m_init_np", m_init_np);
         utils::parser::queryWithParser(pp_warpx, "m_box_size", m_box_size);
+        utils::parser::queryWithParser(pp_warpx, "m_unr_mem_factor", m_unr_mem_factor);
 
         pp_warpx.queryarr("sort_intervals", sort_intervals_string_vec);
         sort_intervals = utils::parser::IntervalsParser(sort_intervals_string_vec);

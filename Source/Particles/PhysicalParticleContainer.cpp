@@ -2777,7 +2777,8 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     unr_recv_count_buffer_mem_size = neigubor_proc_num * max_threads * sizeof(long);
     unr_recv_count_buffer_blk_size = sizeof(long);
     
-    unr_recv_data_buffer_mem_size = 2 * num_tiles * m_init_np * sizeof(amrex::ParticleReal);
+    int m_unr_mem_factor = WarpX::GetInstance().m_unr_mem_factor;
+    unr_recv_data_buffer_mem_size = m_unr_mem_factor * num_tiles * m_init_np * sizeof(amrex::ParticleReal);
     unr_recv_data_buffer_blk_size = unr_recv_data_buffer_mem_size / neigubor_proc_num / max_threads;
 
     unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_buffer_mem_h);

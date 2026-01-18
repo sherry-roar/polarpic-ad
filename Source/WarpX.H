@@ -356,6 +356,7 @@ public:
 
     int m_box_size = 4913;
     int m_init_np = 8 * 8 * 8 * 8 * 8 * 8 + 2048;
+    int m_unr_mem_factor = 2;
     amrex::Real *aos_arr;
     int *int_buffer;
     bool is_last_step = false;
