@@ -382,27 +382,32 @@ public:
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uz_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_w_buffer_arr;
 
-    mutable std::unique_ptr<amrex::iMultiFab> redistribute_mask_ptr;
-    mutable int redistribute_mask_nghost = std::numeric_limits<int>::min();
-    mutable amrex::Vector<int> neighbor_procs;
+    const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
 
     // 进程间通信数据结构
-    const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
-    std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
-    std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // 全局生命周期
+    struct WarpX_COMM_Comp {
+        mutable std::unique_ptr<amrex::iMultiFab> redistribute_mask_ptr;
+        mutable int redistribute_mask_nghost = std::numeric_limits<int>::min();
+        mutable amrex::Vector<int> neighbor_procs;
 
-    std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, 初始化为0; 维护发送和接收的字节数，非向上取整
+        std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
+        std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // 全局生命周期
+    
+        std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, 初始化为0; 维护发送和接收的字节数，非向上取整
 
-    std::vector<int> RcvProc;
-    std::vector<std::size_t> rOffset; // Offset (in bytes) in the receive buffer
+        std::vector<int> RcvProc;
+        std::vector<std::size_t> rOffset; // Offset (in bytes) in the receive buffer
+    
+        // std::size_t TotRcvInts;     // 维护偏移量，做了向上取整
+        std::size_t TotRcvBytes;    // 维护接收到的总字节数，但是没做向上取整
+    
+        // Vector<MPI_Status>  stats;     // size: nrcvs
+        amrex::Vector<MPI_Request> rreqs;        // size: nrcvs
+        amrex::Vector<MPI_Request> sreqs;
+        amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.    
+    };
 
-    // std::size_t TotRcvInts;     // 维护偏移量，做了向上取整
-    std::size_t TotRcvBytes;    // 维护接收到的总字节数，但是没做向上取整
-
-    // Vector<MPI_Status>  stats;     // size: nrcvs
-    amrex::Vector<MPI_Request> rreqs;        // size: nrcvs
-    amrex::Vector<MPI_Request> sreqs;
-    amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.
+    WarpX_COMM_Comp warpx_comm_comp;
 
     // UNR 缓冲区
     std::map<int, int> who_to_idx;
@@ -562,7 +567,8 @@ public:
         std::vector<std::vector<size_t>> data_size; // 维度：[who, thread_id]
         void clear()
         {
-            amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs;
+            WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+            amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
             int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
             int max_threads = omp_get_max_threads();
 
