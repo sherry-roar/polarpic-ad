@@ -11937,7 +11937,7 @@ bool
 PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
                                    ParticleLocData& pld,
                                    Particle<0, 0>& p_prime,
-                                   int lev, int local_grid)
+                                   int lev, int local_grid, int* is_pml = nullptr)
 {
     const Geometry& geom = Geom(0);
     const auto plo = geom.ProbLoArray();      // Real 类型：[x_lo, y_lo, z_lo]
@@ -11952,65 +11952,74 @@ PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
 
     bool is_outside_geom = (xp < rlo[0] || xp > rhi[0] || yp < rlo[1] || yp > rhi[1] || zp < rlo[2] || zp > rhi[2]);
 
-    if (is_outside_geom && geom.isAnyPeriodic())
-    {
-        bool shift_success = false;
-        for (int idim = 0; idim < 3; ++idim)
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    *is_pml = 0;
+
+    if (is_outside_geom) {
+        if (geom.isAnyPeriodic())
         {
-            if (!is_per[idim]) continue;
-            if (p_prime.pos(idim) > rhi[idim]) {
-                while (p_prime.pos(idim) > rhi[idim]) {
-                    p_prime.pos(idim) -= static_cast<ParticleReal>(phi[idim] - plo[idim]);
-                }
-                if (p_prime.pos(idim) < rlo[idim]) {
-                    p_prime.pos(idim) = rlo[idim];
-                }
-                shift_success = true;
-            }
-            else if (p_prime.pos(idim) < rlo[idim]) {
-                while (p_prime.pos(idim) < rlo[idim]) {
-                    p_prime.pos(idim) += static_cast<ParticleReal>(phi[idim] - plo[idim]);
-                }
+            bool shift_success = false;
+            for (int idim = 0; idim < 3; ++idim)
+            {
+                if (!is_per[idim]) continue;
                 if (p_prime.pos(idim) > rhi[idim]) {
-                    p_prime.pos(idim) = rhi[idim];
+                    while (p_prime.pos(idim) > rhi[idim]) {
+                        p_prime.pos(idim) -= static_cast<ParticleReal>(phi[idim] - plo[idim]);
+                    }
+                    if (p_prime.pos(idim) < rlo[idim]) {
+                        p_prime.pos(idim) = rlo[idim];
+                    }
+                    shift_success = true;
                 }
-                shift_success = true;
+                else if (p_prime.pos(idim) < rlo[idim]) {
+                    while (p_prime.pos(idim) < rlo[idim]) {
+                        p_prime.pos(idim) += static_cast<ParticleReal>(phi[idim] - plo[idim]);
+                    }
+                    if (p_prime.pos(idim) > rhi[idim]) {
+                        p_prime.pos(idim) = rhi[idim];
+                    }
+                    shift_success = true;
+                }
             }
-        }
-
-        if (!shift_success)
-        {
-            amrex::Abort("Particle is still outside the domain after periodic shift");
-        }            
-
-        std::vector< std::pair<int,Box> > isects;
-        int grid;
-        IntVect iv;
-        const BoxArray& ba = ParticleBoxArray(lev);
-
-        iv = Index<amrex::Particle<0, 0>, DefaultAssignor>(p_prime, lev);
-        ba.intersections(Box(iv, iv), isects, true, 0);
-        grid = isects.empty() ? -1 : isects[0].first;
-
-        if (grid >= 0)
-        {
-            // 一定要再后面打包数据的时候用 p_prime 中的位置
-            // mx_buffer_ptr[ip] = p_prime.pos(0);
-            // my_buffer_ptr[ip] = p_prime.pos(1);
-            // mz_buffer_ptr[ip] = p_prime.pos(2);
-
-            const Box& bx = ba.getCellCenteredBox(grid);
-
-            pld.m_lev = lev;
-            pld.m_grid = grid;
-            pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
-            pld.m_cell = iv;
-            pld.m_gridbox = bx;
-            pld.m_grown_gridbox = bx;
+    
+            if (!shift_success)
+            {
+                amrex::Abort("Particle is still outside the domain after periodic shift");
+            }            
+    
+            std::vector< std::pair<int,Box> > isects;
+            int grid;
+            IntVect iv;
+            const BoxArray& ba = ParticleBoxArray(lev);
+    
+            iv = Index<amrex::Particle<0, 0>, DefaultAssignor>(p_prime, lev);
+            ba.intersections(Box(iv, iv), isects, true, 0);
+            grid = isects.empty() ? -1 : isects[0].first;
+    
+            if (grid >= 0)
+            {
+                // 一定要再后面打包数据的时候用 p_prime 中的位置
+                // mx_buffer_ptr[ip] = p_prime.pos(0);
+                // my_buffer_ptr[ip] = p_prime.pos(1);
+                // mz_buffer_ptr[ip] = p_prime.pos(2);
+    
+                const Box& bx = ba.getCellCenteredBox(grid);
+    
+                pld.m_lev = lev;
+                pld.m_grid = grid;
+                pld.m_tile = getTileIndex(iv, bx, do_tiling, tile_size, pld.m_tilebox);
+                pld.m_cell = iv;
+                pld.m_gridbox = bx;
+                pld.m_grown_gridbox = bx;
+            }
+            else
+            {
+                amrex::Abort("Particle is still outside the domain after periodic shift");
+            }
         }
         else
         {
-            amrex::Abort("Particle is still outside the domain after periodic shift");
+            *is_pml = 1;
         }
     }
     else
@@ -12376,7 +12385,9 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
         ParticleReal& yp = p_prime.pos(1);
         ParticleReal& zp = p_prime.pos(2);
 
-        my_locateParticle(pti, pld, p_prime, lev, local_grid);
+        int is_pml;
+        my_locateParticle(pti, pld, p_prime, lev, local_grid, &is_pml);
+        if (is_pml == 1) { continue; }
 
         const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
         if (who == MyProc)

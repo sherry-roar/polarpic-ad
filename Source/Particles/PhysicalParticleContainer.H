@@ -488,7 +488,8 @@ public:
     virtual bool my_locateParticle (WarpXParIter& pti,
                          amrex::ParticleLocData& pld,
                          amrex::Particle<0, 0>& p_prime,
-                         int lev, int local_grid);
+                         int lev, int local_grid,
+                         int* is_pml);
 
     virtual void fusion_pack(WarpXParIter& pti,
                          amrex::IntVect ngEB,
