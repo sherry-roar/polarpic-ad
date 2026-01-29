@@ -503,6 +503,7 @@ WarpX::WarpX ()
     // USER DEFINED 大数组解决
     InitTempVectors();
 
+    InitCommParticleContainer();
 }
 
 WarpX::~WarpX ()
@@ -568,6 +569,16 @@ WarpX::InitTempVectors()
         thread_private_w_buffer_arr[i].resize(m_init_np);
     }
 #endif
+}
+
+void
+WarpX::InitCommParticleContainer()
+{
+    warpx_comm_particle_container.clear();
+
+    for (const auto& sname : mypc->GetSpeciesNames()) {
+        warpx_comm_particle_container.try_emplace(sname);
+    }
 }
 
 void

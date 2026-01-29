@@ -119,6 +119,8 @@ public:
 
     // -=======  USER DEFINED FUNCTIONS  ========
     void InitTempVectors();    
+
+    void InitCommParticleContainer();
     // ========== END USER DEFINED FUNCTIONS  ==========
 
     //
@@ -384,11 +386,13 @@ public:
 
     const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
 
+    std::map<std::string, std::map<int, int>> who_to_idx;
+    std::map<std::string, amrex::Vector<int>> neighbor_procs;
+
     // 进程间通信数据结构
     struct WarpX_COMM_Comp {
         mutable std::unique_ptr<amrex::iMultiFab> redistribute_mask_ptr;
         mutable int redistribute_mask_nghost = std::numeric_limits<int>::min();
-        mutable amrex::Vector<int> neighbor_procs;
 
         std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
         std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // 全局生命周期
@@ -407,13 +411,7 @@ public:
         amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.    
     };
 
-    WarpX_COMM_Comp warpx_comm_comp;
-
     // UNR 缓冲区
-    std::map<int, int> who_to_idx;
-    int num_event = 1;
-    int num_tiles = 0;
-
     struct UNR_WarpX_buffer {
         // "数据量" 发送缓冲区，发送的是粒子量的个数
         void* count_buffer = nullptr;
@@ -442,44 +440,44 @@ public:
         // std::vector<std::vector<unr_blk_h>> data_secondary_buffer_blk_h;
         // std::vector<std::vector<unr_sig_h>> data_secondary_buffer_sig_h;
 
-        void* get_who_count_buffer(int who, int thread_id) {
+        void* get_who_count_buffer(int who, int thread_id, const std::string& sname) {
             int max_threads = omp_get_max_threads();
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return (char*)count_buffer + (who_idx * max_threads + thread_id) * count_buffer_blk_size;
         }
 
-        unr_sig_h& get_who_count_sig_h(int who, int thread_id) 
+        unr_sig_h& get_who_count_sig_h(int who, int thread_id, const std::string& sname) 
         {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return count_buffer_sig_h[who_idx][thread_id];
         }
 
-        unr_blk_h& get_who_count_blk_h(int who, int thread_id) 
+        unr_blk_h& get_who_count_blk_h(int who, int thread_id, const std::string& sname) 
         {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return count_buffer_blk_h[who_idx][thread_id];
         }
 
-        void* get_who_data_buffer(int who, int thread_id) {
+        void* get_who_data_buffer(int who, int thread_id, const std::string& sname) {
             int max_threads = omp_get_max_threads();
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return (char*)data_buffer + (who_idx * max_threads + thread_id) * data_buffer_blk_size;
         }
 
-        unr_sig_h& get_who_data_sig_h(int who, int thread_id) 
+        unr_sig_h& get_who_data_sig_h(int who, int thread_id, const std::string& sname) 
         {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return data_buffer_sig_h[who_idx][thread_id];
         }
 
-        unr_blk_h& get_who_data_blk_h(int who, int thread_id) 
+        unr_blk_h& get_who_data_blk_h(int who, int thread_id, const std::string& sname) 
         {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return data_buffer_blk_h[who_idx][thread_id];
         }
@@ -565,10 +563,9 @@ public:
         // 像 vector 数组一样维护几个成员函数，不属于 UNR 的成员，主要用于定位打包数据的数量高效打包数据
         // 注意：所有的 size 均以 char 为单位
         std::vector<std::vector<size_t>> data_size; // 维度：[who, thread_id]
-        void clear()
+        void clear(const std::string& sname)
         {
-            WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
-            amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+            amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
             int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
             int max_threads = omp_get_max_threads();
 
@@ -583,20 +580,20 @@ public:
             }
         }
         
-        void resize_who(int who, int thread_id, size_t size)
+        void resize_who(int who, int thread_id, size_t size, const std::string& sname)
         {
             if (size > data_buffer_blk_size)
             {
                 amrex::Abort("Error: Requested buffer size exceeds the allocated buffer capacity.");
             }
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             data_size[who_idx][thread_id] = size;
         }
 
-        size_t size_who(int who, int thread_id)
+        size_t size_who(int who, int thread_id, const std::string& sname)
         {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return data_size[who_idx][thread_id];
         }
@@ -616,22 +613,19 @@ public:
         }
     };
 
-    UNR_WarpX_buffer unr_send_buffer;
-    UNR_WarpX_buffer unr_recv_buffer;
-
     // int step = -1;          // 维护当前步数
 
     struct UNR_WarpX_rmt_blk {
         std::vector<std::vector<unr_blk_h>> rmt_count_blk;
         std::vector<std::vector<unr_blk_h>> rmt_data_blk;
-        unr_blk_h get_who_rmt_count_blk(int who, int thread_id) {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+        unr_blk_h get_who_rmt_count_blk(int who, int thread_id, const std::string& sname) {
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return rmt_count_blk[who_idx][thread_id];
         }
 
-        unr_blk_h get_who_rmt_data_blk(int who, int thread_id) {
-            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+        unr_blk_h get_who_rmt_data_blk(int who, int thread_id, const std::string& sname) {
+            std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
             int who_idx = who_to_idx[who];
             return rmt_data_blk[who_idx][thread_id];
         }
@@ -669,7 +663,19 @@ public:
         // }
     };
 
-    UNR_WarpX_rmt_blk unr_rmt_blk;
+    struct WarpX_COMM_ParticleContainer {
+        WarpX_COMM_Comp warpx_comm_comp;
+
+        int num_event = 1;
+        int num_tiles = 0;
+
+        UNR_WarpX_buffer unr_send_buffer;
+        UNR_WarpX_buffer unr_recv_buffer;
+        
+        UNR_WarpX_rmt_blk unr_rmt_blk;
+    };
+
+    std::map<std::string, WarpX_COMM_ParticleContainer> warpx_comm_particle_container;
 
     //! If true, particles will be sorted in the order x -> y -> z -> ppc for faster deposition
     static bool sort_particles_for_deposition;

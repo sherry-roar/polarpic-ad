@@ -2651,7 +2651,8 @@ PhysicalParticleContainer::AddPlasmaFlux (PlasmaInjector const& plasma_injector,
 void
 PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(int lev, int nghost)
 {
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
 
     // 如果做全局通信，则为每个进程都做线程安全分配
     if (nghost <= 0)
@@ -2665,7 +2666,7 @@ PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps
     }
 
     std::unique_ptr<iMultiFab>& redistribute_mask_ptr = warpx_comm_comp.redistribute_mask_ptr;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
     int& redistribute_mask_nghost = warpx_comm_comp.redistribute_mask_nghost;
     if (redistribute_mask_ptr == nullptr ||
         redistribute_mask_nghost < nghost ||
@@ -2734,17 +2735,19 @@ PhysicalParticleContainer::my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps
 void
 PhysicalParticleContainer::UNR_WarpX_buffer_reg()
 {
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
-    int& num_tiles = WarpX::GetInstance().num_tiles;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
+    int& num_tiles = warpx_comm_particle_container.num_tiles;
     int& m_init_np = WarpX::GetInstance().m_init_np;
-    const int& num_event = WarpX::GetInstance().num_event;
+    const int& num_event = warpx_comm_particle_container.num_event;
 
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
 
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
-    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = warpx_comm_particle_container.unr_recv_buffer;
 
     // 注册 "数据量" 和 "数据" 发送 mem
     void* & unr_send_count_buffer = unr_send_buffer.count_buffer;
@@ -2897,10 +2900,12 @@ void
 PhysicalParticleContainer::UNR_WarpX_blk_sync()
 {
     // 各个邻居进程互相告知 rmt blk
-    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
-    map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = warpx_comm_particle_container.unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
+    map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
     
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
@@ -2966,8 +2971,8 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
     MPI_Waitall(neigubor_proc_num, send_blk_reqs.data(), send_blk_status.data());
 
     // 将接收到的 blk 解包
-    std::vector<std::vector<unr_blk_h>>& rmt_count_blk = WarpX::GetInstance().unr_rmt_blk.rmt_count_blk;
-    std::vector<std::vector<unr_blk_h>>& rmt_data_blk = WarpX::GetInstance().unr_rmt_blk.rmt_data_blk;
+    std::vector<std::vector<unr_blk_h>>& rmt_count_blk = warpx_comm_particle_container.unr_rmt_blk.rmt_count_blk;
+    std::vector<std::vector<unr_blk_h>>& rmt_data_blk = warpx_comm_particle_container.unr_rmt_blk.rmt_data_blk;
     rmt_count_blk.resize(neigubor_proc_num);
     rmt_data_blk.resize(neigubor_proc_num);
 
@@ -3017,7 +3022,9 @@ PhysicalParticleContainer::UNR_WarpX_blk_sync()
 void
 PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev, int nghost)
 {
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
     // 如果做全局通信，则为每个进程都做线程安全分配
     if (nghost <= 0)
     {
@@ -3030,7 +3037,7 @@ PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev
     }
 
     std::unique_ptr<iMultiFab>& redistribute_mask_ptr = warpx_comm_comp.redistribute_mask_ptr;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
     int& redistribute_mask_nghost = warpx_comm_comp.redistribute_mask_nghost;
     if (redistribute_mask_ptr == nullptr ||
         redistribute_mask_nghost < nghost ||
@@ -3060,7 +3067,7 @@ PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev
         redistribute_mask_ptr->FillBoundary(geom.periodicity());
 
         neighbor_procs.clear();
-        int& num_tiles = WarpX::GetInstance().num_tiles;
+        int& num_tiles = warpx_comm_particle_container.num_tiles;
         num_tiles = 0;
         for (MFIter mfi(*redistribute_mask_ptr, tile_size_do); mfi.isValid(); ++mfi)
         {
@@ -3093,7 +3100,7 @@ PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev
         }
 
         // 构建 who_to_idx
-        std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx;
+        std::map<int, int>& who_to_idx = WarpX::GetInstance().who_to_idx[sname];
         for (int i = 0; i < neigubor_proc_num; ++i) {
             int who = neighbor_procs[i];
             who_to_idx[who] = i;
@@ -3104,14 +3111,15 @@ PhysicalParticleContainer::UNR_BuildRedistributeMask_and_ClearSendBuffer(int lev
         UNR_WarpX_blk_sync();
     }
 
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
-    unr_send_buffer.clear();
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;
+    unr_send_buffer.clear(sname);
 }
 
 void
 PhysicalParticleContainer::fusion_Isend_and_Irecv()
 {
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
 
     BL_PROFILE_VAR_NS("MyRedistributeMPI::prepare_send_buf", blp_prepare_send_buf);
     BL_PROFILE_VAR_NS("MyRedistributeMPI::handshake_local", blp_handshake_local);
@@ -3178,7 +3186,7 @@ PhysicalParticleContainer::fusion_Isend_and_Irecv()
     }
 
     const int NProcs = ParallelContext::NProcsSub();
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
     const int NNeighborProcs = neighbor_procs.size();
     // std::vector<long> Snds(NProcs, 0), Rcvs(NProcs, 0);     // 维护发送和接收的字节数，非向上取整
     std::vector<long> Snds(NProcs, 0);
@@ -3318,12 +3326,14 @@ void
 PhysicalParticleContainer::fusion_unr_put()
 {
     BL_PROFILE("UNR::fusion_unr_put");
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
 
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
-    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
-    WarpX::UNR_WarpX_rmt_blk& unr_rmt_blk = WarpX::GetInstance().unr_rmt_blk;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = warpx_comm_particle_container.unr_recv_buffer;
+    WarpX::UNR_WarpX_rmt_blk& unr_rmt_blk = warpx_comm_particle_container.unr_rmt_blk;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
 
     int max_threads = omp_get_max_threads();
     int neigubor_proc_num = static_cast<int>(neighbor_procs.size());
@@ -3389,7 +3399,8 @@ void
 PhysicalParticleContainer::fusion_wait()
 {
     BL_PROFILE("MyRedistributeMPI::fusion_wait");
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
 
     std::vector<long>& Rcvs = warpx_comm_comp.Rcvs;
     std::vector<int>& RcvProc = warpx_comm_comp.RcvProc;
@@ -3444,11 +3455,13 @@ void
 PhysicalParticleContainer::fusion_unr_wait()
 {
     BL_PROFILE("UNR::fusion_unr_wait");
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
 
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
-    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = warpx_comm_particle_container.unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
     // int step = WarpX::GetInstance().step;
 
     int max_threads = omp_get_max_threads();
@@ -3519,7 +3532,8 @@ PhysicalParticleContainer::fusion_remote_collect(int lev)
     BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Locate", blp_locate);
     BL_PROFILE_VAR_NS("MyRedistributeMPI::fusion_remote_collect::Copy", blp_copy);
     const int superparticle_size = WarpX::GetInstance().superparticle_size;
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
 
     std::vector<long>& Rcvs = warpx_comm_comp.Rcvs;
     std::vector<int>& RcvProc = warpx_comm_comp.RcvProc;
@@ -3650,11 +3664,13 @@ PhysicalParticleContainer::fusion_unr_remote_collect(int lev)
 {
     BL_PROFILE("UNR::fusion_unr_remote_collect");
 
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
 
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;
-    WarpX::UNR_WarpX_buffer& unr_recv_buffer = WarpX::GetInstance().unr_recv_buffer;
-    amrex::Vector<int>& neighbor_procs = warpx_comm_comp.neighbor_procs;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;
+    WarpX::UNR_WarpX_buffer& unr_recv_buffer = warpx_comm_particle_container.unr_recv_buffer;
+    amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
     int superparticle_size = WarpX::GetInstance().superparticle_size;
     // int step = WarpX::GetInstance().step;
 
@@ -4495,6 +4511,12 @@ PhysicalParticleContainer::Evolve (int lev,
                 amrex::Array4<const amrex::Real> const& bz_arr = bzfab->array();
 
                 int m_box_size = WarpX::GetInstance().m_box_size;
+
+                if (lenx * leny * lenz > m_box_size) {
+                    printf("lenx * leny * lenz: %d, m_box_size: %d\n", lenx * leny * lenz, m_box_size);
+                    amrex::Abort("lenx * leny * lenz > m_box_size");
+                }
+
                 amrex::Real* aos_arr = WarpX::GetInstance().aos_arr + thread_num * 6 * m_box_size;
 
                 for (int l_node = 0; l_node < lenz; ++l_node)
@@ -11937,7 +11959,7 @@ bool
 PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
                                    ParticleLocData& pld,
                                    Particle<0, 0>& p_prime,
-                                   int lev, int local_grid, int* is_pml = nullptr)
+                                   int lev, int local_grid, int* is_pml)
 {
     const Geometry& geom = Geom(0);
     const auto plo = geom.ProbLoArray();      // Real 类型：[x_lo, y_lo, z_lo]
@@ -11952,7 +11974,8 @@ PhysicalParticleContainer::my_locateParticle (WarpXParIter& pti,
 
     bool is_outside_geom = (xp < rlo[0] || xp > rhi[0] || yp < rlo[1] || yp > rhi[1] || zp < rlo[2] || zp > rhi[2]);
 
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
     *is_pml = 0;
 
     if (is_outside_geom) {
@@ -12369,7 +12392,8 @@ PhysicalParticleContainer::fusion_pack(WarpXParIter& pti,
 
     const int superparticle_size = WarpX::GetInstance().superparticle_size;
 
-    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_comp;
+    const std::string& sname = species_name;
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = WarpX::GetInstance().warpx_comm_particle_container.at(sname).warpx_comm_comp;
     std::map<int, std::vector< std::vector<char> > >& remote_send_allcomps = warpx_comm_comp.remote_send_allcomps;   // 维度：[thread_id, who]: realdata，每7个一组
 
     for (long ip = g_new_particles_begin; ip < np_to_push; ip++)
@@ -12641,7 +12665,10 @@ PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
     const int local_tile = local_index.second;
 
     const int superparticle_size = WarpX::GetInstance().superparticle_size;
-    WarpX::UNR_WarpX_buffer& unr_send_buffer = WarpX::GetInstance().unr_send_buffer;        // 维度：[thread_id, who]: realdata，每7个一组
+    std::string& sname = species_name;
+    WarpX::WarpX_COMM_ParticleContainer& warpx_comm_particle_container = WarpX::GetInstance().warpx_comm_particle_container.at(sname);
+    WarpX::WarpX_COMM_Comp& warpx_comm_comp = warpx_comm_particle_container.warpx_comm_comp;
+    WarpX::UNR_WarpX_buffer& unr_send_buffer = warpx_comm_particle_container.unr_send_buffer;        // 维度：[thread_id, who]: realdata，每7个一组
 
     for (long ip = g_new_particles_begin; ip < np_to_push; ip++)
     {
@@ -12656,7 +12683,9 @@ PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
         ParticleReal& yp = p_prime.pos(1);
         ParticleReal& zp = p_prime.pos(2);
 
-        my_locateParticle(pti, pld, p_prime, lev, local_grid);
+        int is_pml;
+        my_locateParticle(pti, pld, p_prime, lev, local_grid, &is_pml);
+        if (is_pml == 1) { continue; }
 
         const int who = ParallelContext::global_to_local_rank(ParticleDistributionMap(pld.m_lev)[pld.m_grid]);
         if (who == MyProc)
@@ -12683,11 +12712,11 @@ PhysicalParticleContainer::fusion_pack_unr(WarpXParIter& pti,
         }
         else
         {
-            size_t old_size = unr_send_buffer.size_who(who, thread_num);
+            size_t old_size = unr_send_buffer.size_who(who, thread_num, sname);
             size_t new_size = old_size + superparticle_size;
-            unr_send_buffer.resize_who(who, thread_num, new_size);
+            unr_send_buffer.resize_who(who, thread_num, new_size, sname);
 
-            char* dst = (char*)unr_send_buffer.get_who_data_buffer(who, thread_num) + old_size;
+            char* dst = (char*)unr_send_buffer.get_who_data_buffer(who, thread_num, sname) + old_size;
             
             std::memcpy(dst, &soa.GetIdCPUData()[ip], sizeof(uint64_t));
             dst += sizeof(uint64_t);
