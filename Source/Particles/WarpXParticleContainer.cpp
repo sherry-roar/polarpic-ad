@@ -170,13 +170,14 @@ WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
         const auto dxi = geom.InvCellSizeArray();
         const auto plo = geom.ProbLoArray();
         const auto domain = geom.Domain();
+        const auto& dm = *m_dummy_mf[lev];
 
-        for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+        for (MFIter mfi(dm, do_tiling ? tile_size : IntVect::TheZeroVector()); mfi.isValid(); ++mfi)
         {
-            auto& ptile           = ParticlesAt(lev, pti);
-            const std::size_t np  = pti.numParticles();
+            auto& ptile           = ParticlesAt(lev, mfi);
+            const std::size_t np  = ptile.numParticles();
 
-            const amrex::Box& box = pti.tilebox();
+            const amrex::Box& box = mfi.tilebox();
             
             int ntiles = numTilesInBox(box, true, bin_size);
 
@@ -187,11 +188,11 @@ WarpXParticleContainer::InitBin (amrex::IntVect bin_size)
             int* offsets          = reinterpret_cast<int*>(m_bins.offsetsPtr());      // offset array
             int numBins           = m_bins.numBins();
 
-            ReorderParticles(lev, pti, perm);
+            ReorderParticles(lev, mfi, perm);
 
             int nps = static_cast<int>(np);
             Box growbox;
-            growbox = pti.tilebox();
+            growbox = mfi.tilebox();
             const amrex::IntVect& ng_J = WarpX::GetInstance().get_ng_depos_J();
             growbox.grow(ng_J);
 

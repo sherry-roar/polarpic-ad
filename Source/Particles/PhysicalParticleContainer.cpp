@@ -3791,12 +3791,15 @@ void
 PhysicalParticleContainer::fusion_local_collect(int lev)
 {
     BL_PROFILE("MyRedistribute::fusion_local_collect()");
+    const auto& dm = *m_dummy_mf[lev];
+    
     #pragma omp parallel
-    for (WarpXParIter pti(*this, lev); pti.isValid(); ++pti)
+    for (amrex::MFIter mfi(dm, do_tiling ? tile_size : amrex::IntVect::TheZeroVector()); mfi.isValid(); ++mfi)
     {
-        auto& ptile = ParticlesAt(lev, pti);
+        auto& ptile = ParticlesAt(lev, mfi);          // 用 mfi 取 tile
+        std::size_t np = ptile.numParticles();        // 可以是 0
         int max_threads = omp_get_max_threads();
-        auto& soa = pti.GetStructOfArrays();
+        auto& soa = ptile.GetStructOfArrays();
         auto& iddata = soa.GetIdCPUData();
         auto& m_x = soa.GetRealData(PIdx::x);
         auto& m_y = soa.GetRealData(PIdx::y);
