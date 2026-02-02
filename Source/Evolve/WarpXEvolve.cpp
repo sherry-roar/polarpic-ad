@@ -507,7 +507,7 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
         mypc->fusion_local_collect(finest_level);
 #if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         mypc->fusion_remote_collect(finest_level);
-#elif defined(UNROLL_OMP_UNR)
+#elif defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
         mypc->fusion_unr_remote_collect(finest_level);
 #endif
     }
@@ -573,7 +573,7 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
 #if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_TEST\n");
         mypc->fusion_test(finest_level);
-#elif defined(UNROLL_OMP_UNR)
+#elif defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
         printf("[WarpX::HandleParticlesAtBoundaries] Run FUSION_UNR_TEST\n");
         mypc->fusion_unr_test(finest_level);
 #endif

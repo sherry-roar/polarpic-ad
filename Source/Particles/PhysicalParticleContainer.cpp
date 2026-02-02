@@ -4394,7 +4394,7 @@ PhysicalParticleContainer::Evolve (int lev,
         constexpr int local = 1;    // TODO: move out
 #if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
         my_BuildRedistributeMask_and_ModifyRemoteSendAllcomps(0, local);
-#elif defined(UNROLL_OMP_UNR)
+#elif defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
         UNR_BuildRedistributeMask_and_ClearSendBuffer(0, local);
 #endif
     }
@@ -4735,7 +4735,7 @@ PhysicalParticleContainer::Evolve (int lev,
                     if (!is_last_step) {
 #if defined(FIELD_OVERLAP) || defined(UNROLL_OMP)
                         fusion_pack(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
-#elif defined(UNROLL_OMP_UNR)
+#elif defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
                         fusion_pack_unr(pti, Ex.nGrowVect(), 0, np_to_push, lev, gather_lev);
 #endif
                     }
@@ -5052,22 +5052,21 @@ PhysicalParticleContainer::Evolve (int lev,
         SplitParticles(lev);
     }
 
-#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) && defined(FIELD_OVERLAP)
-    if (!is_last_step) {
-        printf("Run FIELD_OVERLAP\n");
-        fusion_Isend_and_Irecv();
-    }
-#endif  // FIELD_OVERLAP
-
 #if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
     if (!is_last_step) {
-#if defined(UNROLL_OMP)
+#if defined(FIELD_OVERLAP)
+        amrex::Print() << "Run FIELD_OVERLAP\n";
+        fusion_Isend_and_Irecv();
+#elif defined(FIELD_OVERLAP_UNR)
+        amrex::Print() << "Run FIELD_OVERLAP_UNR\n";
+        fusion_unr_put();
+#elif defined(UNROLL_OMP)
         fusion_wait();
 #elif defined(UNROLL_OMP_UNR)
         fusion_unr_wait();
 #endif
     }
-#endif
+#endif  // PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
 }
 
 void
