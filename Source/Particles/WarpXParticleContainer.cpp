@@ -1600,6 +1600,14 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #ifdef SVE_RHOCELL_INCRSORT_ORDER3
                     printf("RUN SVE_RHOCELL_INCRSORT_ORDER3\n");
 
+                    Box real_box;
+                    if (lev == depos_lev) {
+                        real_box = pti.tilebox();
+                    } else {
+                        const IntVect& ref_ratio = WarpX::RefRatio(depos_lev);
+                        real_box = amrex::coarsen(pti.tilebox(),ref_ratio);
+                    }
+
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
                     // doDepositionShapeN_sve_rhocell_incrsort_order3<3>(
@@ -1607,12 +1615,20 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
-                        xyzmin, len, q, ptile, WarpX::n_rz_azimuthal_modes
+                        xyzmin, len, real_box, tilebox, q, ptile, WarpX::n_rz_azimuthal_modes
                     );
 #endif  // SVE_RHOCELL_INCRSORT_ORDER3
 
 #ifdef SVE_RHOCELL_SME_INCRSORT_ORDER3
                     printf("RUN SVE_RHOCELL_SME_INCRSORT_ORDER3\n");
+
+                    Box real_box;
+                    if (lev == depos_lev) {
+                        real_box = pti.tilebox();
+                    } else {
+                        const IntVect& ref_ratio = WarpX::RefRatio(depos_lev);
+                        real_box = amrex::coarsen(pti.tilebox(),ref_ratio);
+                    }
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
@@ -1621,7 +1637,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
                         jx_fab, jy_fab, jz_fab, np_to_deposit, relative_time, dinv,
-                        xyzmin, len, q, ptile, WarpX::n_rz_azimuthal_modes
+                        xyzmin, len, real_box, tilebox, q, ptile, WarpX::n_rz_azimuthal_modes
                     );
 #endif  // SVE_RHOCELL_SME_INCRSORT_ORDER3
 

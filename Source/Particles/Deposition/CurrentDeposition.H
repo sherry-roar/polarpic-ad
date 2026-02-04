@@ -11259,8 +11259,14 @@ using ParticleTileType = typename WarpXParticleContainer::ParticleTileType;
 
 inline void increment_sort_deposit(ParticleTileType& ptile, 
                                    int* newbin, long np, int lenx, int leny, int lenz, 
+                                   amrex::Box& real_box, amrex::Box& box,
                                    vector<vector<int>>& outside_bin_ip)
 {
+    if (!ptile.is_incr_sort_initialized)
+    {
+        ptile.init_incr_sort(real_box, box);
+    }
+
     // 增量排序
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -11598,6 +11604,8 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3 (const GetParticlePosition<P
                         const amrex::XDim3 & dinv,
                         const amrex::XDim3 & xyzmin,
                         amrex::Dim3 len,
+                        amrex::Box real_box,
+                        amrex::Box box,
                         amrex::Real q,
                         ParticleTileType& ptile,
                         [[maybe_unused]]int n_rz_azimuthal_modes)
@@ -11699,7 +11707,7 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3 (const GetParticlePosition<P
 
     int num_bins = lenx * leny * lenz;
     vector<vector<int>> outside_bin_ip(num_bins);
-    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, real_box, box, outside_bin_ip);
 
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -11939,6 +11947,8 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3_eurosys (const GetParticlePo
                         const amrex::XDim3 & dinv,
                         const amrex::XDim3 & xyzmin,
                         amrex::Dim3 len,
+                        amrex::Box real_box,
+                        amrex::Box box,
                         amrex::Real q,
                         ParticleTileType& ptile,
                         [[maybe_unused]]int n_rz_azimuthal_modes)
@@ -12058,7 +12068,7 @@ void doDepositionShapeN_sve_rhocell_incrsort_order3_eurosys (const GetParticlePo
 
     int num_bins = lenx * leny * lenz;
     vector<vector<int>> outside_bin_ip(num_bins);
-    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, real_box, box, outside_bin_ip);
 
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -12689,6 +12699,8 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3 (const GetParticlePositi
                         const amrex::XDim3 & dinv,
                         const amrex::XDim3 & xyzmin,
                         amrex::Dim3 len,
+                        amrex::Box real_box,
+                        amrex::Box box,
                         amrex::Real q,
                         ParticleTileType& ptile,
                         [[maybe_unused]]int n_rz_azimuthal_modes)
@@ -12754,7 +12766,7 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3 (const GetParticlePositi
 
     int num_bins = lenx * leny * lenz;
     vector<vector<int>> outside_bin_ip(num_bins);
-    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, real_box, box, outside_bin_ip);
 
     sve_rhocell_sme_incrsort_order3_kernel<3>(
         wp, uxp, uyp, uzp,
@@ -13219,6 +13231,8 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3_eurosys (const GetPartic
                         const amrex::XDim3 & dinv,
                         const amrex::XDim3 & xyzmin,
                         amrex::Dim3 len,
+                        amrex::Box real_box,
+                        amrex::Box box,
                         amrex::Real q,
                         ParticleTileType& ptile,
                         [[maybe_unused]]int n_rz_azimuthal_modes)
@@ -13344,7 +13358,7 @@ void doDepositionShapeN_sve_rhocell_sme_incrsort_order3_eurosys (const GetPartic
 
     int num_bins = lenx * leny * lenz;
     vector<vector<int>> outside_bin_ip(num_bins);
-    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, outside_bin_ip);
+    increment_sort_deposit(ptile, newbin, np_to_deposit, lenx, leny, lenz, real_box, box, outside_bin_ip);
 
 #ifdef BREAKDOWN
     sort_area[1] = rdtscv();
