@@ -11257,6 +11257,69 @@ void doDepositionShapeN_sve_rhocell_sme_large_order3_test (const GetParticlePosi
 
 using ParticleTileType = typename WarpXParticleContainer::ParticleTileType;
 
+/* @brief 将 max_bin_length 增加为两倍
+*/
+inline void increment_deposit_rebuild(ParticleTileType& ptile, amrex::Box& box)
+{
+    int& max_bin_length = ptile.max_bin_length;
+    int max_bin_length_rebuild = 2 * max_bin_length;
+
+    const int d_num_bins = ptile.d_num_bins;
+    const int d_real_num_bins = ptile.d_real_num_bins;
+
+    std::vector<int> d_incr_bin_offset_rebuild(d_num_bins, -1);
+    std::vector<int> d_incr_bin_length_rebuild(d_num_bins, 0);
+    std::vector<int> d_local_index_rebuild(max_bin_length_rebuild * d_real_num_bins, ParticleTileType::INVALID_PARTICLE_ID);
+
+    vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
+    std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
+    vector<int>& d_local_index = ptile.d_local_index;
+
+    const amrex::Dim3 len = length(box);
+    const int lenx = len.x;
+    const int leny = len.y;
+    const int lenz = len.z;
+
+    int local_index_head = 0;
+
+    for (int l_node = 0; l_node < lenz; ++l_node)
+    {
+        for (int k_node = 0; k_node < leny; ++k_node)
+        {
+            for (int j_node = 0; j_node < lenx; ++j_node)
+            {
+                int bin = j_node + k_node * lenx + l_node * lenx * leny;
+                int oldbin_offset = d_incr_bin_offset[bin];
+                int oldbin_length = d_incr_bin_length[bin];
+
+                if (oldbin_offset == -1) continue;
+
+                int& rebuildbin_offset = d_incr_bin_offset_rebuild[bin];
+                int& rebuildbin_length = d_incr_bin_length_rebuild[bin];
+
+                rebuildbin_offset = local_index_head;
+                rebuildbin_length = oldbin_length;
+
+                for (int i = 0; i < rebuildbin_length; ++i)
+                {
+                    int idx = oldbin_offset + i;
+                    int rebuildbin_idx = rebuildbin_offset + i;
+
+                    d_local_index_rebuild[rebuildbin_idx] = d_local_index[idx];
+                }
+
+                local_index_head += max_bin_length_rebuild;
+            }
+        }
+    }
+
+    d_incr_bin_offset.swap(d_incr_bin_offset_rebuild);
+    d_incr_bin_length.swap(d_incr_bin_length_rebuild);
+    d_local_index.swap(d_local_index_rebuild);
+
+    max_bin_length = max_bin_length_rebuild;
+}
+
 inline void increment_sort_deposit(ParticleTileType& ptile, 
                                    int* newbin, long np, int lenx, int leny, int lenz, 
                                    amrex::Box& real_box, amrex::Box& box,
@@ -11268,9 +11331,6 @@ inline void increment_sort_deposit(ParticleTileType& ptile,
     }
 
     // 增量排序
-    vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
-    std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
-    vector<int>& d_local_index = ptile.d_local_index;
     std::vector<int>& d_old_outside_index = ptile.d_old_outside_index;
     int& d_old_np = ptile.d_old_np;
 
@@ -11337,6 +11397,9 @@ inline void increment_sort_deposit(ParticleTileType& ptile,
         {
             for (int j_node = 0; j_node < lenx; ++j_node)
             {
+                vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
+                std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
+                vector<int>& d_local_index = ptile.d_local_index;
                 int old_bin = j_node + k_node * lenx + l_node * lenx * leny;
                 int& oldbin_offset = d_incr_bin_offset[old_bin];
                 int& oldbin_length = d_incr_bin_length[old_bin];
@@ -11472,23 +11535,23 @@ inline void increment_sort_deposit(ParticleTileType& ptile,
         int ip = pending_moves[i];
         int newbin_ip = newbin[ip];
 
-        if (d_incr_bin_offset[newbin_ip] == -1)
+        if (ptile.d_incr_bin_offset[newbin_ip] == -1)
         {
             d_old_outside_index.push_back(ip);
             outside_bin_ip[newbin_ip].push_back(ip);
         }
         else
         {
-            int& newbin_offset = d_incr_bin_offset[newbin_ip];
-            int& newbin_length = d_incr_bin_length[newbin_ip];
-            int newbin_tail = newbin_offset + newbin_length;
-
-            if (newbin_tail >= newbin_offset + ptile.max_bin_length)
+            if (ptile.d_incr_bin_length[newbin_ip] >= ptile.max_bin_length)
             {
-                amrex::Abort("max_bin_length exceeded");
+                increment_deposit_rebuild(ptile, box);
             }
 
-            d_local_index[newbin_tail] = ip;
+            int& newbin_offset = ptile.d_incr_bin_offset[newbin_ip];
+            int& newbin_length = ptile.d_incr_bin_length[newbin_ip];
+            int newbin_tail = newbin_offset + newbin_length;
+
+            ptile.d_local_index[newbin_tail] = ip;
             newbin_length++;
         }
     }
