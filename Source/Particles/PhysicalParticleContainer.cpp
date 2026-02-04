@@ -9310,8 +9310,18 @@ inline void Mvec_compute_shape_factor_part_sve_order3(double* sx, MVec x, svbool
     sx3.Store(p, &sx[3 * VEC_LEN]);
 }
 
-void increment_sort(ParticleTileType& ptile, int* newbin, long np, int lenx, int leny, int lenz)
+void increment_sort(ParticleTileType& ptile, int* newbin, long np, Box& real_box, Box& box)
 {
+    if (!ptile.is_incr_sort_initialized)
+    {
+        ptile.init_incr_sort(real_box, box);
+    }
+
+    const Dim3 len = length(box);
+    int lenx = len.x;
+    int leny = len.y;
+    int lenz = len.z;
+
     // 增量排序
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -9739,8 +9749,9 @@ PhysicalParticleContainer::PushPX_sve_incrsort_order3 (WarpXParIter& pti,
         svst1w(p_ip, newbin + ip, newbin_v);
     }
 
-    auto& ptile = ParticlesAt(lev, pti);
-    increment_sort(ptile, newbin, np_to_push, lenx, leny, lenz);
+    auto& ptile = ParticlesAt(lev, pti);    
+    Box real_box = pti.tilebox();
+    increment_sort(ptile, newbin, np_to_push, real_box, box);
 
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -10145,8 +10156,9 @@ PhysicalParticleContainer::PushPX_sve_sme_incrsort_order3 (WarpXParIter& pti,
         svst1w(p_ip, newbin + ip, newbin_v);
     }
 
-    auto& ptile = ParticlesAt(lev, pti);
-    increment_sort(ptile, newbin, np_to_push, lenx, leny, lenz);
+    auto& ptile = ParticlesAt(lev, pti);    
+    Box real_box = pti.tilebox();
+    increment_sort(ptile, newbin, np_to_push, real_box, box);
 
     PushPX_sve_sme_incrsort_order3_kernel(
         aos_arr, 
@@ -10307,8 +10319,9 @@ PhysicalParticleContainer::PushPX_sve_incr_physort_order3 (WarpXParIter& pti,
         svst1w(p_ip, newbin + ip, newbin_v);
     }
 
-    auto& ptile = ParticlesAt(lev, pti);
-    increment_sort(ptile, newbin, np_to_push, lenx, leny, lenz);
+    auto& ptile = ParticlesAt(lev, pti);    
+    Box real_box = pti.tilebox();
+    increment_sort(ptile, newbin, np_to_push, real_box, box);
 
     vector<int>& d_incr_bin_offset = ptile.d_incr_bin_offset;
     std::vector<int>& d_incr_bin_length = ptile.d_incr_bin_length;;
@@ -10793,8 +10806,9 @@ PhysicalParticleContainer::PushPX_sve_sme_incr_physort_order3 (WarpXParIter& pti
         svst1w(p_ip, newbin + ip, newbin_v);
     }
 
-    auto& ptile = ParticlesAt(lev, pti);
-    increment_sort(ptile, newbin, np_to_push, lenx, leny, lenz);
+    auto& ptile = ParticlesAt(lev, pti);    
+    Box real_box = pti.tilebox();
+    increment_sort(ptile, newbin, np_to_push, real_box, box);
 
     PushPX_sve_sme_incr_physort_order3_kernel(
         aos_arr, 
