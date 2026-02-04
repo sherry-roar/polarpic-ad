@@ -10939,6 +10939,7 @@ PhysicalParticleContainer::PushPX_sve_physort_order3 (WarpXParIter& pti,
     long tmpbin[8];
 
     auto& ptile = ParticlesAt(lev, pti);
+    ptile.init_phys_sort(box);
     int& g_move_begin = ptile.g_move_begin;
     
     for (long ip = g_move_begin; ip < np_to_push; ip += vl)
@@ -11908,6 +11909,7 @@ PhysicalParticleContainer::PushPX_sve_sme_physort_order3 (WarpXParIter& pti,
     // init_area += rdtscv() - init_start;
 
     auto& ptile = ParticlesAt(lev, pti);
+    ptile.init_phys_sort(box);
     int& g_move_begin = ptile.g_move_begin;
     
     for (long ip = g_move_begin; ip < np_to_push; ip += vl)
