@@ -4,6 +4,7 @@ foreach(D IN LISTS WarpX_DIMS)
       PRIVATE
         BeamRelevant.cpp
         ColliderRelevant.cpp
+        ConservationErrors.cpp
         FieldEnergy.cpp
         FieldProbe.cpp
         FieldProbeParticleContainer.cpp

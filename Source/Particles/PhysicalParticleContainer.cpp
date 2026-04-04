@@ -2766,8 +2766,8 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     unr_send_data_buffer_mem_size = 2 * num_tiles * m_init_np * sizeof(amrex::ParticleReal);    // 预留的大小为每个 tile 一个 np 大小的缓冲区
     unr_send_data_buffer_blk_size = unr_send_data_buffer_mem_size / neigubor_proc_num / max_threads;    // 将 mem 平分为每个邻居进程的每个线程一个缓冲区
 
-    unr_mem_alloc_reg(&unr_send_count_buffer, unr_send_count_buffer_mem_size, &unr_send_count_buffer_mem_h);
-    unr_mem_alloc_reg(&unr_send_data_buffer, unr_send_data_buffer_mem_size, &unr_send_data_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_send_count_buffer, unr_send_count_buffer_mem_size, 0, &unr_send_count_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_send_data_buffer, unr_send_data_buffer_mem_size, 0, &unr_send_data_buffer_mem_h);
 
     // 注册 "数据量" 和 "数据" 接收 mem
     void* & unr_recv_count_buffer = unr_recv_buffer.count_buffer;
@@ -2787,8 +2787,8 @@ PhysicalParticleContainer::UNR_WarpX_buffer_reg()
     unr_recv_data_buffer_mem_size = m_unr_mem_factor * num_tiles * m_init_np * sizeof(amrex::ParticleReal);
     unr_recv_data_buffer_blk_size = unr_recv_data_buffer_mem_size / neigubor_proc_num / max_threads;
 
-    unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, &unr_recv_count_buffer_mem_h);
-    unr_mem_alloc_reg(&unr_recv_data_buffer, unr_recv_data_buffer_mem_size, &unr_recv_data_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_recv_count_buffer, unr_recv_count_buffer_mem_size, 0, &unr_recv_count_buffer_mem_h);
+    unr_mem_alloc_reg(&unr_recv_data_buffer, unr_recv_data_buffer_mem_size, 0, &unr_recv_data_buffer_mem_h);
 
     // // 为接收缓冲区注册副缓冲区
     // void* & unr_recv_count_secondary_buffer = unr_recv_buffer.count_secondary_buffer;
@@ -4549,7 +4549,7 @@ PhysicalParticleContainer::Evolve (int lev,
                 const auto gather_lev = lev;
                 if (push_type == PushType::Explicit) {
 #ifdef PUSH_TEST_ORDER3
-                    printf("Run PUSH_TEST_ORDER3\n");
+                    // printf("RUN PUSH_TEST_ORDER3\n");
                     const auto& soa = pti.GetStructOfArrays();
                     const amrex::ParticleReal* AMREX_RESTRICT m_x = soa.GetRealData(PIdx::x).dataPtr();
                     const amrex::ParticleReal* AMREX_RESTRICT m_y = soa.GetRealData(PIdx::y).dataPtr();
@@ -4629,7 +4629,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_TEST_ORDER3
 
 #ifdef PUSH_ORG_ORDER3
-                    printf("RUN PUSH_ORG_ORDER3\n");
+                    // printf("RUN PUSH_ORG_ORDER3\n");
                     PushPX(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4637,7 +4637,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_ORG
 
 #ifdef PUSH_BASELINE_ORDER3
-                    printf("RUN PUSH_BASELINE_ORDER3\n");
+                    // printf("RUN PUSH_BASELINE_ORDER3\n");
                     PushPX_baseline_order3(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4645,7 +4645,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_BASELINE_ORDER3
 
 #ifdef PUSH_SVE_ORDER3
-                    printf("RUN PUSH_SVE_ORDER3\n");
+                    // printf("RUN PUSH_SVE_ORDER3\n");
                     PushPX_sve_order3(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4654,7 +4654,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_BASELINE_ORDER3
 
 #ifdef PUSH_SVE_SME_MICRO_ORDER3
-                    printf("RUN PUSH_SVE_SME_MICRO_ORDER3\n");
+                    // printf("RUN PUSH_SVE_SME_MICRO_ORDER3\n");
                     PushPX_sve_sme_micro_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4663,7 +4663,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_MICRO_ORDER3
 
 #ifdef PUSH_SVE_SME_LARGE_ORDER3
-                    printf("RUN PUSH_SVE_SME_LARGE_ORDER3\n");
+                    // printf("RUN PUSH_SVE_SME_LARGE_ORDER3\n");
                     PushPX_sve_sme_large_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4672,7 +4672,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_LARGE_ORDER3
 
 #ifdef PUSH_SVE_INCRSORT_ORDER3
-                    printf("RUN PUSH_SVE_INCRSORT_ORDER3\n");
+                    // printf("RUN PUSH_SVE_INCRSORT_ORDER3\n");
                     PushPX_sve_incrsort_order3(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4681,7 +4681,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif
 
 #ifdef PUSH_SVE_SME_INCRSORT_ORDER3
-                    printf("RUN PUSH_SVE_SME_INCRSORT_ORDER3\n");
+                    // printf("RUN PUSH_SVE_SME_INCRSORT_ORDER3\n");
                     PushPX_sve_sme_incrsort_order3(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4690,7 +4690,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif
 
 #ifdef PUSH_SVE_INCR_PHYSORT_ORDER3
-                    printf("RUN PUSH_SVE_INCR_PHYSORT_ORDER3\n");
+                    // printf("RUN PUSH_SVE_INCR_PHYSORT_ORDER3\n");
                     PushPX_sve_incr_physort_order3(pti, exfab, eyfab, ezfab,
                            bxfab, byfab, bzfab,
                            Ex.nGrowVect(), e_is_nodal,
@@ -4699,7 +4699,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif
 
 #ifdef PUSH_SVE_SME_INCR_PHYSORT_ORDER3
-                    printf("RUN PUSH_SVE_SME_INCR_PHYSORT_ORDER3\n");
+                    // printf("RUN PUSH_SVE_SME_INCR_PHYSORT_ORDER3\n");
                     PushPX_sve_sme_incr_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4708,7 +4708,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_INCR_PHYSORT_ORDER3
 
 #ifdef PUSH_SVE_PHYSORT_ORDER3
-                    printf("RUN PUSH_SVE_PHYSORT_ORDER3\n");
+                    // printf("RUN PUSH_SVE_PHYSORT_ORDER3\n");
                     PushPX_sve_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4717,7 +4717,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_PHYSORT_ORDER3
 
 #ifdef PUSH_SVE_SME_PHYSORT_ORDER3
-                    printf("RUN PUSH_SVE_SME_PHYSORT_ORDER3\n");
+                    // // printf("RUN PUSH_SVE_SME_PHYSORT_ORDER3\n");
                     PushPX_sve_sme_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4726,7 +4726,7 @@ PhysicalParticleContainer::Evolve (int lev,
 #endif  // PUSH_SVE_SME_PHYSORT_ORDER3
 
 #ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
-                    // printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
+                    // // printf("RUN PUSH_SVE_SME_PHYSORT_FUSION_ORDER3\n");
                     PushPX_sve_sme_physort_order3(pti, exfab, eyfab, ezfab,
                             bxfab, byfab, bzfab,
                             Ex.nGrowVect(), e_is_nodal,
@@ -4925,7 +4925,7 @@ PhysicalParticleContainer::Evolve (int lev,
     }
 
     if (!is_last_step) {
-        amrex::Print() << "Run UNROLL_OMP\n";
+        // amrex::Print() << "Run UNROLL_OMP\n";
         fusion_Isend_and_Irecv();
     }
 
@@ -4960,7 +4960,7 @@ PhysicalParticleContainer::Evolve (int lev,
     }
 
     if (!is_last_step) {
-        amrex::Print() << "Run UNROLL_OMP_UNR\n";
+        // amrex::Print() << "Run UNROLL_OMP_UNR\n";
         fusion_unr_put();
     }
 

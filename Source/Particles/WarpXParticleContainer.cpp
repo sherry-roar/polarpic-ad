@@ -1442,7 +1442,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // MY_TEST_ORDER3
 
 #ifdef BASELINE_ORDER3
-                    printf("RUN BASELINE_ORDER3\n");
+                    // printf("RUN BASELINE_ORDER3\n");
                     doDepositionShapeN<3>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
                         uyp.dataPtr() + offset, uzp.dataPtr() + offset, ion_lev,
@@ -1521,7 +1521,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // PURE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_ORDER3
-                    printf("RUN SVE_RHOCELL_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_ORDER3\n");
                     const Dim3 len = length(tilebox);
                     // doDepositionShapeN_sve_rhocell_order3<3>(
                     doDepositionShapeN_sve_rhocell_order3_eurosys<3>(
@@ -1546,7 +1546,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_SME_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_SME_ORDER3\n");
                     const Dim3 len = length(tilebox);
                     doDepositionShapeN_sve_rhocell_sme_order3<3>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
@@ -1572,7 +1572,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // PURE_RHOCELL_ORDER3
 
 #ifdef SVE_RHOCELL_SME_LARGE_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_LARGE_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_SME_LARGE_ORDER3\n");
                     const Dim3 len = length(tilebox);
                     doDepositionShapeN_sve_rhocell_sme_large_order3<3>(
                         GetPosition, wp.dataPtr() + offset, uxp.dataPtr() + offset,
@@ -1598,7 +1598,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_SME_LARGE_ORDER3
 
 #ifdef SVE_RHOCELL_INCRSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_INCRSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_INCRSORT_ORDER3\n");
 
                     Box real_box;
                     if (lev == depos_lev) {
@@ -1620,7 +1620,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_INCRSORT_ORDER3
 
 #ifdef SVE_RHOCELL_SME_INCRSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_INCRSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_SME_INCRSORT_ORDER3\n");
 
                     Box real_box;
                     if (lev == depos_lev) {
@@ -1642,7 +1642,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_SME_INCRSORT_ORDER3
 
 #ifdef SVE_RHOCELL_BINSORT_PHYSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_BINSORT_PHYSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_BINSORT_PHYSORT_ORDER3\n");
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
@@ -1656,7 +1656,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_BINSORT_PHYSORT_ORDER3
 
 #ifdef SVE_RHOCELL_SME_BINSORT_PHYSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_BINSORT_PHYSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_SME_BINSORT_PHYSORT_ORDER3\n");
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
@@ -1670,7 +1670,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_SME_BINSORT_PHYSORT_ORDER3
 
 #ifdef SVE_RHOCELL_PHYSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_PHYSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_PHYSORT_ORDER3\n");
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
@@ -1683,7 +1683,7 @@ WarpXParticleContainer::DepositCurrent (WarpXParIter& pti,
 #endif  // SVE_RHOCELL_PHYSORT_ORDER3
 
 #ifdef SVE_RHOCELL_SME_PHYSORT_ORDER3
-                    printf("RUN SVE_RHOCELL_SME_PHYSORT_ORDER3\n");
+                    // printf("RUN SVE_RHOCELL_SME_PHYSORT_ORDER3\n");
 
                     const Dim3 len = length(tilebox);
                     auto& ptile = ParticlesAt(lev, pti);
