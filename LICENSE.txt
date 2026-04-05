@@ -1,3 +1,7 @@
+Additional notice for downstream modifications in this repository:
+Portions Copyright (c) 2026, Yizhuo Rao. All rights reserved.
+The original WarpX license terms below remain in effect for the upstream WarpX-derived code retained in this repository.
+
 WarpX Copyright (c) 2018, The Regents of the University of California,
 through Lawrence Berkeley National Laboratory, and Lawrence Livermore National
 Security, LLC, for the operation of Lawrence Livermore National Laboratory
