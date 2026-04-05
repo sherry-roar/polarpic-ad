@@ -1,0 +1,43 @@
+&PARA
+    p_row = 4, 
+    p_col = 8 /
+!--------------------------------------------------------------------------------------------------
+! In x-pencil mode, `p_row` is the number of partitions in the y direction,
+!   `p_col` is the number of partitions in the z direction.
+! The coresponding number of MPI tasks should be `p_row*p_col`
+!--------------------------------------------------------------------------------------------------
+
+&MESH
+    read_mesh = F, mesh_type = 1, stretch_func = 0, stretch_ratio = 3.0, 
+    nx = 128, ny = 128, nz = 128, 
+    lx = 12.566370614359172, ly = 6.283185307179586, lz = 2.0 /
+!--------------------------------------------------------------------------------------------------
+! `read_mesh` determines whether a user-supplied grid file should be used.
+!   If true (T), PowerLLEL reads the size of grid cells in the z direction line by line,
+!   if false (F), a uniform/nonuniform grid is automatically generated according to `mesh_type`.
+! `mesh_type`
+!   0 => uniform grid
+!   1 => nonuniform grid stretched by tanh/sin function
+! `stretch_func` & `stretch_ratio`
+!   0 & (0.0, +\infty) => tanh
+!   1 & (0.0, 1.0]     => sin
+! `nx`, `ny`, `nz` are numbers of grid cells in the streamwise, spanwise and wall-normal direction.
+! `lx`, `ly`, `lz` are computation domain sizes in coresponding directions.
+!--------------------------------------------------------------------------------------------------
+
+&BATCH
+    batch_inst_fn_prefix = 'inst',
+    batch_inst_nt_start = 100, 
+    batch_inst_nt_end = 1000, 
+    batch_inst_nt_interval = 100 /
+
+&POST
+    out_stat = T, 
+    out_vortex = F, 
+    fd_scheme = 1 /
+
+&POST_VORTEX
+    is_vel_staggered = T, 
+    out_vorticity = F, 
+    out_q = F, 
+    out_lambda2 = F /

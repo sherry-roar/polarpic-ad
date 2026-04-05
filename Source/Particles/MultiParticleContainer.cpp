@@ -738,26 +738,6 @@ MultiParticleContainer::fusion_unr_remote_collect(int lev)
     }
 }
 
-void
-MultiParticleContainer::fusion_test(int lev)
-{
-    for (auto& pc : allcontainers) {
-        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
-            phys->fusion_test(lev);
-        }
-    }
-}
-
-void
-MultiParticleContainer::fusion_unr_test(int lev)
-{
-    for (auto& pc : allcontainers) {
-        if (auto* phys = dynamic_cast<PhysicalParticleContainer*>(pc.get())) {
-            phys->fusion_unr_test(lev);
-        }
-    }
-}
-
 Vector<Long>
 MultiParticleContainer::GetZeroParticlesInGrid (const int lev) const
 {

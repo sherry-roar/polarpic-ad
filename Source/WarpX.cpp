@@ -500,7 +500,6 @@ WarpX::WarpX ()
 
     m_accelerator_lattice.resize(nlevs_max);
 
-    // USER DEFINED 大数组解决
     InitTempVectors();
 
     InitCommParticleContainer();
@@ -523,7 +522,6 @@ WarpX::~WarpX ()
     free(sz_m);
 }
 
-// USER DEFINED 大数组解决
 void
 WarpX::InitTempVectors()
 {
@@ -540,18 +538,9 @@ WarpX::InitTempVectors()
     sy_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
     sz_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
 
-#if defined(PUSH_SVE_INCRSORT_ORDER3) || \
-    defined(PUSH_SVE_SME_INCRSORT_ORDER3) || \
-    defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || \
-    defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3) || \
-    defined(SVE_RHOCELL_INCRSORT_ORDER3) || \
-    defined(SVE_RHOCELL_SME_INCRSORT_ORDER3)
-    newbin = (int*)malloc(m_init_np * max_threads * sizeof(int));
-    pending_moves = (int*)malloc(m_init_np * max_threads * sizeof(int));
-    invalid_idx = (int*)malloc(m_init_np * max_threads * sizeof(int));
-#endif
 
-#if defined(PUSH_SVE_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3) || defined(PUSH_SVE_INCR_PHYSORT_ORDER3) || defined(PUSH_SVE_SME_INCR_PHYSORT_ORDER3)
+#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+    // Allocate per-thread staging buffers for fused physort packing.
     thread_private_mx_buffer_arr.resize(max_threads);
     thread_private_my_buffer_arr.resize(max_threads);
     thread_private_mz_buffer_arr.resize(max_threads);

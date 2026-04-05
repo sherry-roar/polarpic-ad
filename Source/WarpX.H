@@ -117,11 +117,10 @@ public:
 
     void Evolve (int numsteps = -1);
 
-    // -=======  USER DEFINED FUNCTIONS  ========
-    void InitTempVectors();    
+    // Custom helper functions
+    void InitTempVectors();
 
     void InitCommParticleContainer();
-    // ========== END USER DEFINED FUNCTIONS  ==========
 
     //
     // Functions used by implicit solvers
@@ -384,61 +383,50 @@ public:
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_uz_buffer_arr;
     std::vector<amrex::PODVector<amrex::ParticleReal>> thread_private_w_buffer_arr;
 
-    const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // 每个粒子需要打包的数据的内存大小
+    const int superparticle_size = sizeof(uint64_t) + 7 * sizeof(amrex::ParticleReal);  // Packed bytes required per particle
 
     std::map<std::string, std::map<int, int>> who_to_idx;
     std::map<std::string, amrex::Vector<int>> neighbor_procs;
 
-    // 进程间通信数据结构
+    // Inter-process communication state
     struct WarpX_COMM_Comp {
         mutable std::unique_ptr<amrex::iMultiFab> redistribute_mask_ptr;
         mutable int redistribute_mask_nghost = std::numeric_limits<int>::min();
 
-        std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // 维度：[who, thread_id]: idcpu + realdata
-        std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // 全局生命周期
-    
-        std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, 初始化为0; 维护发送和接收的字节数，非向上取整
+        std::map<int, std::vector< std::vector<char> > > remote_send_allcomps;   // Layout: [who, thread_id] -> idcpu + realdata
+        std::map<int, std::vector< unsigned long long > > mpi_snd_data;         // Persistent across the whole run
+
+        std::vector<long> /*Snds(NProcs, 0),*/ Rcvs;     // size: NProcs, tracks sent/received bytes without ceil padding
 
         std::vector<int> RcvProc;
         std::vector<std::size_t> rOffset; // Offset (in bytes) in the receive buffer
-    
-        // std::size_t TotRcvInts;     // 维护偏移量，做了向上取整
-        std::size_t TotRcvBytes;    // 维护接收到的总字节数，但是没做向上取整
-    
+
+        // std::size_t TotRcvInts;     // Tracks offsets after ceil padding
+        std::size_t TotRcvBytes;    // Tracks received bytes without ceil padding
+
         // Vector<MPI_Status>  stats;     // size: nrcvs
         amrex::Vector<MPI_Request> rreqs;        // size: nrcvs
         amrex::Vector<MPI_Request> sreqs;
-        amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.    
+        amrex::Vector<unsigned long long> recvdata;    // size: TotRcvInts, Allocate data for rcvs as one big chunk.
     };
 
-    // UNR 缓冲区
+    // UNR buffers
     struct UNR_WarpX_buffer {
-        // "数据量" 发送缓冲区，发送的是粒子量的个数
+        // Send buffer for per-neighbor particle counts
         void* count_buffer = nullptr;
         size_t count_buffer_mem_size = 0;
         size_t count_buffer_blk_size = 0;
         unr_mem_h count_buffer_mem_h;
-        std::vector<std::vector<unr_blk_h>> count_buffer_blk_h;  // 维度：[who, thread_id]
-        std::vector<std::vector<unr_sig_h>> count_buffer_sig_h;  // 维度：[who, thread_id]
+        std::vector<std::vector<unr_blk_h>> count_buffer_blk_h;  // Layout: [who, thread_id]
+        std::vector<std::vector<unr_sig_h>> count_buffer_sig_h;  // Layout: [who, thread_id]
 
-        // "数据" 发送缓冲区
+        // Send buffer for packed particle data
         void* data_buffer = nullptr;
         size_t data_buffer_mem_size = 0;
         size_t data_buffer_blk_size = 0;
         unr_mem_h data_buffer_mem_h;
-        std::vector<std::vector<unr_blk_h>> data_buffer_blk_h; // 维度：[who, thread_id]
-        std::vector<std::vector<unr_sig_h>> data_buffer_sig_h; // 维度：[who, thread_id]
-
-        // // 分奇偶步数双缓冲
-        // void* count_secondary_buffer = nullptr;         // 副缓冲区和主缓冲区的大小一致
-        // unr_mem_h count_secondary_buffer_mem_h;
-        // std::vector<std::vector<unr_blk_h>> count_secondary_buffer_blk_h;
-        // std::vector<std::vector<unr_sig_h>> count_secondary_buffer_sig_h;
-
-        // void* data_secondary_buffer = nullptr;
-        // unr_mem_h data_secondary_buffer_mem_h;
-        // std::vector<std::vector<unr_blk_h>> data_secondary_buffer_blk_h;
-        // std::vector<std::vector<unr_sig_h>> data_secondary_buffer_sig_h;
+        std::vector<std::vector<unr_blk_h>> data_buffer_blk_h; // Layout: [who, thread_id]
+        std::vector<std::vector<unr_sig_h>> data_buffer_sig_h; // Layout: [who, thread_id]
 
         void* get_who_count_buffer(int who, int thread_id, const std::string& sname) {
             int max_threads = omp_get_max_threads();
@@ -512,57 +500,9 @@ public:
             return data_buffer_blk_h[who_idx][thread_id];
         }
 
-        // // 自适应获取缓冲区
-        // void* adaptive_get_whoidx_count_buffer(int who_idx, int thread_id, int step)
-        // {
-        //     int choice = step % 2;
-        //     int max_threads = omp_get_max_threads();
-
-        //     if (choice == 0) {
-        //         return (char*)count_buffer + (who_idx * max_threads + thread_id) * count_buffer_blk_size;
-        //     }
-        //     else {
-        //         return (char*)count_secondary_buffer + (who_idx * max_threads + thread_id) * count_buffer_blk_size;
-        //     }
-        // }
-
-        // unr_sig_h& adaptive_get_whoidx_count_sig_h(int who_idx, int thread_id, int step)
-        // {
-        //     int choice = step % 2;
-        //     if (choice == 0) {
-        //         return count_buffer_sig_h[who_idx][thread_id];
-        //     }
-        //     else {
-        //         return count_secondary_buffer_sig_h[who_idx][thread_id];
-        //     }
-        // }
-
-        // void* adaptive_get_whoidx_data_buffer(int who_idx, int thread_id, int step)
-        // {
-        //     int choice = step % 2;
-        //     int max_threads = omp_get_max_threads();
-        //     if (choice == 0) {
-        //         return (char*)data_buffer + (who_idx * max_threads + thread_id) * data_buffer_blk_size;
-        //     }
-        //     else {
-        //         return (char*)data_secondary_buffer + (who_idx * max_threads + thread_id) * data_buffer_blk_size;
-        //     }
-        // }
-
-        // unr_sig_h& adaptive_get_whoidx_data_sig_h(int who_idx, int thread_id, int step)
-        // {
-        //     int choice = step % 2;
-        //     if (choice == 0) {
-        //         return data_buffer_sig_h[who_idx][thread_id];
-        //     }
-        //     else {
-        //         return data_secondary_buffer_sig_h[who_idx][thread_id];
-        //     }
-        // }
-
-        // 像 vector 数组一样维护几个成员函数，不属于 UNR 的成员，主要用于定位打包数据的数量高效打包数据
-        // 注意：所有的 size 均以 char 为单位
-        std::vector<std::vector<size_t>> data_size; // 维度：[who, thread_id]
+        // Helper metadata kept alongside the vector-like storage. These values are not part of UNR itself and are used to track packed data sizes efficiently.
+        // All sizes are stored in bytes.
+        std::vector<std::vector<size_t>> data_size; // Layout: [who, thread_id]
         void clear(const std::string& sname)
         {
             amrex::Vector<int>& neighbor_procs = WarpX::GetInstance().neighbor_procs[sname];
@@ -613,7 +553,7 @@ public:
         }
     };
 
-    // int step = -1;          // 维护当前步数
+    // int step = -1;          // Tracks the current step
 
     struct UNR_WarpX_rmt_blk {
         std::vector<std::vector<unr_blk_h>> rmt_count_blk;
@@ -638,29 +578,6 @@ public:
             return rmt_data_blk[who_idx][thread_id];
         }
 
-        // // 远程块要分主副
-        // std::vector<std::vector<unr_blk_h>> rmt_count_secondary_blk;
-        // std::vector<std::vector<unr_blk_h>> rmt_data_secondary_blk;
-
-        // unr_blk_h adaptive_get_whoidx_rmt_count_blk(int who_idx, int thread_id, int step) {
-        //     int choice = step % 2;
-        //     if (choice == 0) {
-        //         return rmt_count_blk[who_idx][thread_id];
-        //     }
-        //     else {
-        //         return rmt_count_secondary_blk[who_idx][thread_id];
-        //     }
-        // }
-
-        // unr_blk_h adaptive_get_whoidx_rmt_data_blk(int who_idx, int thread_id, int step) {
-        //     int choice = step % 2;
-        //     if (choice == 0) {
-        //         return rmt_data_blk[who_idx][thread_id];
-        //     }
-        //     else {
-        //         return rmt_data_secondary_blk[who_idx][thread_id];
-        //     }
-        // }
     };
 
     struct WarpX_COMM_ParticleContainer {

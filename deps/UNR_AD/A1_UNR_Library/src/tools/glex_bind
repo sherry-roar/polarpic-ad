@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Must be the same. Otherwise, BUG.
+export UNR_INTER=glex$SLURM_LOCALID
+export UNR_INTRA=glex$SLURM_LOCALID
+
+# if [[ $SLURM_LOCALID -eq 0 ]]
+# then
+#     export UNR_INTER=glex0,glex1
+#     export UNR_INTRA=glex0,glex1
+# else
+#     export UNR_INTER=glex1,glex0
+#     export UNR_INTRA=glex1,glex0
+# fi
+
+$1

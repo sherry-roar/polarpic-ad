@@ -22,7 +22,7 @@ void warpx::initialization::initialize_external_libraries(int argc, char* argv[]
     warpx::initialization::amrex_init(argc, argv);
     ablastr::math::anyfft::setup();
 
-#if defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
+#if defined(UNROLL_OMP_UNR)
     unr_init();
     amrex::Print() << "UNR initialized\n";
 #endif
@@ -30,7 +30,7 @@ void warpx::initialization::initialize_external_libraries(int argc, char* argv[]
 
 void warpx::initialization::finalize_external_libraries()
 {
-#if defined(UNROLL_OMP_UNR) || defined(FIELD_OVERLAP_UNR)
+#if defined(UNROLL_OMP_UNR)
     unr_finalize();
 #endif
 
