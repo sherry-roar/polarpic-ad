@@ -540,7 +540,7 @@ WarpX::InitData ()
 
     CheckKnownIssues();
 
-#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+#if defined(PUSH_vpu_mpu_PHYSORT_FUSION_ORDER3)
     mypc->InitBin();
 #endif
 }

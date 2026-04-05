@@ -539,7 +539,7 @@ WarpX::InitTempVectors()
     sz_m = (double*)malloc(4 * m_init_np * max_threads * sizeof(double));
 
 
-#if defined(PUSH_SVE_SME_PHYSORT_FUSION_ORDER3)
+#if defined(PUSH_vpu_mpu_PHYSORT_FUSION_ORDER3)
     // Allocate per-thread staging buffers for fused physort packing.
     thread_private_mx_buffer_arr.resize(max_threads);
     thread_private_my_buffer_arr.resize(max_threads);

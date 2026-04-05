@@ -497,7 +497,7 @@ void WarpX::HandleParticlesAtBoundaries (int step, amrex::Real cur_time, int num
     mypc->ApplyBoundaryConditions();
     m_particle_boundary_buffer->gatherParticlesFromDomainBoundaries(*mypc);
 
-#ifdef PUSH_SVE_SME_PHYSORT_FUSION_ORDER3
+#ifdef PUSH_vpu_mpu_PHYSORT_FUSION_ORDER3
     const bool& is_last_step = WarpX::GetInstance().is_last_step;
     if (!is_last_step) {
         if (finest_level != 0) { amrex::Abort("Fusion collect is not supported for finest_level != 0"); }
