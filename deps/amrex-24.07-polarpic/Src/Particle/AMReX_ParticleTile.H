@@ -1271,18 +1271,20 @@ struct ParticleTile
     }
 
 public:
+    // Guard one-time initialization of gather-side physical sorting metadata.
     bool is_physort_initialized = false;
 
-    // Data structures for gather-side physical sorting.
+    // Bin metadata for the grown-tile view used by gather-side physical sorting.
     int g_num_bins;
     int g_real_num_bins;
     int g_move_begin;
     std::vector<int> g_phys_bin_offset;      // half-open range [begin, end)
     std::vector<int> g_phys_bin_length;      // half-open range [begin, end)
 
+    // First index reserved for particles appended after the initial layout is built.
     int g_new_particles_begin;
 
-    // Thread-local receive buffers indexed by thread id.
+    // Thread-local receive buffers indexed by OpenMP thread id.
     std::vector<std::vector<uint64_t> > local_recv_idcpu;
     std::vector<std::vector<amrex::ParticleReal> > local_recv_xp;
     std::vector<std::vector<amrex::ParticleReal> > local_recv_yp;
@@ -1331,6 +1333,8 @@ public:
     std::vector<amrex::ParticleReal> unr_local_recv_w_test;
 #endif  // FUSION_TEST
 
+    // Build the gather-side bin layout from precomputed offsets and allocate
+    // thread-local receive buffers once per tile.
     void init_phys_sort(
         const int np,
         const int* offsets,
@@ -1395,6 +1399,8 @@ public:
         local_recv_w.resize(max_thread_num);
     }
 
+    // Initialize an empty gather-side layout when the tile has no prebuilt
+    // physical-sort offsets yet.
     void init_phys_sort(
         const amrex::Box& grown_tile_box
     )

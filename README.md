@@ -50,6 +50,27 @@ This codebase depends on the same class of external HPC/scientific dependencies 
 
 Dependency details are intentionally kept minimal in this repository snapshot. External HPC dependencies should be reviewed and pinned explicitly before production or redistribution use.
 
+## Example build and run scripts
+
+The release-oriented scripts in `Examples/` are provided as portable templates rather than ready-to-run cluster recipes.
+
+- They now default to repository-relative source, build, install, input, log, and run paths.
+- Site-specific modules, compiler names, MPI launchers, UNR locations, and optional dependency roots are intentionally represented as environment variables or `path/to/...` placeholders.
+- Fixed process counts, fixed thread counts, platform-specific bind scripts, and architecture-disclosing compiler options have been removed from the published examples.
+- Users are expected to supply their own scheduler directives, toolchain modules, optional feature defines, and library paths for their local environment.
+
+## Locally modified files
+
+The current repository snapshot keeps a small set of downstream-edited files that are relevant to code review and future cleanup:
+
+- `Source/Particles/PhysicalParticleContainer.H` and `Source/Particles/PhysicalParticleContainer.cpp`: retained the target physort order-3 push path and removed non-target experiment/test branches.
+- `Source/Particles/Deposition/CurrentDeposition.H`: kept the target deposition path while removing non-target test and experiment macros.
+- `Source/Particles/WarpXParticleContainer.cpp`: kept the order-3 custom deposition path and collapsed non-target order-1 custom branches back to the baseline flow.
+- `Source/Evolve/WarpXEvolve.cpp`, `Source/Initialization/WarpXInit.cpp`, `Source/Initialization/WarpXInitData.cpp`, `Source/WarpX.cpp`, and `Source/WarpX.H`: draft/comment cleanup and minimal gate cleanup around the retained custom path.
+- `Source/Particles/MultiParticleContainer.H` and `Source/Particles/MultiParticleContainer.cpp`: removal of leftover test-only interfaces.
+- `deps/amrex-24.07-polarpic/Src/Particle/AMReX_ParticleTile.H`: downstream AMReX-side metadata and initialization changes for physical sorting and incremental sorting.
+- `Examples/test-single-build-release.sh` and `Examples/test-single-run-release.sh`: sanitized example scripts rewritten with repository-relative defaults and placeholder toolchain/module paths so the build/run flow can be shared without exposing site-specific platform details.
+
 ## Code cleanup status
 
 Current cleanup work focuses on:
