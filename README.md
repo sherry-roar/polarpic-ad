@@ -1,4 +1,4 @@
-# polarpic-ad
+# POLAR-PIC AD
 
 [中文说明 / Chinese README](README.zh.md)
 
