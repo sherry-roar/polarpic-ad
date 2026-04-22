@@ -10,20 +10,20 @@ This repository keeps the source paths, dependency snapshots, and example script
 
 **POLAR-PIC: A Holistic Framework for Matrixized PIC with Co-Designed Compute, Layout, and Communication**
 
-Current paper status:
-- Accepted by **HPDC '26 / The 35th ACM International Symposium on High-Performance Parallel and Distributed Computing**
+- Current paper:
+
 [![DOI](https://img.shields.io/badge/DOI-10.1145%2F3806645.3807574-blue.svg)](https://doi.org/10.1145/3806645.3807574)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.19337-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2604.19337)
 
+Accepted by **HPDC '26 / The 35th ACM International Symposium on High-Performance Parallel and Distributed Computing**.
 
 This repository is not an official WarpX mirror and should be treated as a downstream research branch with platform-specific optimization paths.
 
 ## Relationship to MatrixPIC and upstream WarpX
 
-- Upstream simulation framework: WarpX
-- Direct predecessor artifact: [MatrixPIC_AD](https://github.com/sherry-roar/MatrixPIC_AD/tree/main)
-- Prior paper: [Matrix-PIC: Harnessing Matrix Outer-product for High-Performance Particle-in-Cell Simulations](https://arxiv.org/abs/2601.08277)
-- Prior ACM DOI: [10.1145/3767295.3769378](https://doi.org/10.1145/3767295.3769378)
+- Upstream simulation framework: **WarpX** [![WarpX](https://img.shields.io/badge/Framework-WarpX-2d7ff9.svg)](https://github.com/ECP-WarpX/WarpX)
+- Direct predecessor artifact: **MatrixPIC_AD** [![MatrixPIC_AD](https://img.shields.io/badge/Artifact-MatrixPIC__AD-6f42c1.svg)](https://github.com/sherry-roar/MatrixPIC_AD/tree/main)
+- Prior paper: **Matrix-PIC: Harnessing Matrix Outer-product for High-Performance Particle-in-Cell Simulations**, published in **EuroSys '26 / The 21st ACM European Conference on Computer Systems**. [![arXiv](https://img.shields.io/badge/arXiv-2601.08277-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2601.08277) [![DOI](https://img.shields.io/badge/DOI-10.1145%2F3767295.3769378-blue.svg)](https://doi.org/10.1145/3767295.3769378)
 
 Compared with the MatrixPIC artifact, `polarpic-ad` extends the optimization focus from matrixized compute kernels to a broader co-design space that also includes particle layout management and communication orchestration.
 
