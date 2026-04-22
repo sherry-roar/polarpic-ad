@@ -9,21 +9,20 @@
 本仓库保留了理解 POLAR-PIC 论文实现所需的核心源码路径、依赖快照和示例脚本。对应论文为：
 
 **POLAR-PIC: A Holistic Framework for Matrixized PIC with Co-Designed Compute, Layout, and Communication**
+- 当前论文：
 
-当前论文状态：
-- 已被 **HPDC '26 / The 35th ACM International Symposium on High-Performance Parallel and Distributed Computing** 接收
-- 论文链接：**TBD**
-- arXiv 链接：**TBD**
-- 代码 / artifact 首页：**TBD**
+[![DOI](https://img.shields.io/badge/DOI-10.1145%2F3806645.3807574-blue.svg)](https://doi.org/10.1145/3806645.3807574)
+[![arXiv](https://img.shields.io/badge/arXiv-2604.19337-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2604.19337)
 
-本仓库不是 WarpX 官方镜像，而是带有平台特定优化路径的下游研究分支。
+已被 **HPDC '26 / 第 35 届 ACM 高性能并行与分布式计算国际研讨会** 接收。
+
+本仓库并非 WarpX 的官方镜像，而应被视为一个面向研究的下游分支，其中包含针对特定平台的优化路径。
 
 ## 与 MatrixPIC 及上游 WarpX 的关系
 
-- 上游模拟框架：WarpX
-- 直接前作 artifact：[MatrixPIC_AD](https://github.com/sherry-roar/MatrixPIC_AD/tree/main)
-- 前作论文：[Matrix-PIC: Harnessing Matrix Outer-product for High-Performance Particle-in-Cell Simulations](https://arxiv.org/abs/2601.08277)
-- 前作 ACM DOI：[10.1145/3767295.3769378](https://doi.org/10.1145/3767295.3769378)
+- 上游模拟框架：**WarpX** [![WarpX](https://img.shields.io/badge/Framework-WarpX-2d7ff9.svg)](https://github.com/ECP-WarpX/WarpX)
+- 直接前身 artifact：**MatrixPIC_AD** [![MatrixPIC_AD](https://img.shields.io/badge/Artifact-MatrixPIC__AD-6f42c1.svg)](https://github.com/sherry-roar/MatrixPIC_AD/tree/main)
+- 前序论文：**Matrix-PIC: Harnessing Matrix Outer-product for High-Performance Particle-in-Cell Simulations**，发表于 **EuroSys '26 / 第 21 届 ACM 欧洲计算机系统会议**。 [![arXiv](https://img.shields.io/badge/arXiv-2601.08277-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2601.08277) [![DOI](https://img.shields.io/badge/DOI-10.1145%2F3767295.3769378-blue.svg)](https://doi.org/10.1145/3767295.3769378)
 
 相较于 MatrixPIC artifact，`polarpic-ad` 进一步把优化关注点从矩阵化计算核扩展到了更完整的协同设计范围，包括粒子布局管理与通信编排。
 
