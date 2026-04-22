@@ -12,9 +12,9 @@ This repository keeps the source paths, dependency snapshots, and example script
 
 Current paper status:
 - Accepted by **HPDC '26 / The 35th ACM International Symposium on High-Performance Parallel and Distributed Computing**
-- Paper link: **TBD**
-- arXiv link: **TBD**
-- Artifact/code landing page: **TBD**
+- Paper link: [https://doi.org/10.1145/3806645.3807574](https://doi.org/10.1145/3806645.3807574)
+- arXiv: [arXiv:2604.19337](https://arxiv.org/abs/2604.19337)
+
 
 This repository is not an official WarpX mirror and should be treated as a downstream research branch with platform-specific optimization paths.
 
